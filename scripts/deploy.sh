@@ -27,7 +27,7 @@ ADMIN_PORT=6003
 : "${BOT_TOKEN:?BOT_TOKEN env required}"
 : "${SMTP_USER:?SMTP_USER env required}"
 : "${SMTP_PASS:?SMTP_PASS env required}"
-PUBLIC_HOST="${PUBLIC_HOST:-$PUBLIC_HOST}"
+PUBLIC_HOST="${PUBLIC_HOST:-104.248.25.130}"
 
 # ── 1) Repo clone yoki update ─────────────────────────────────
 if [ -d "$DEPLOY_DIR/.git" ]; then
