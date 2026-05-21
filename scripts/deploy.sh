@@ -8,7 +8,7 @@
 #   - PM2 ichida YANGI process'lar (ozimizi-backend, ozimizi-driver, ozimizi-admin)
 #   - nginx alohida site fayli (/etc/nginx/sites-available/ozimizi-taxi)
 # ─────────────────────────────────────────────────────────────
-set -euo pipefail
+set -eo pipefail
 
 # === Sozlamalar ===
 DEPLOY_DIR="/opt/ozimizi-taxi"
