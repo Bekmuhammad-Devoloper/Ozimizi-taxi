@@ -1,0 +1,30 @@
+# env files (never commit secrets)
+**/.env
+**/.env.local
+**/.env.*.local
+backend/.startdev.log
+**/.nextdev.log
+
+# dependencies
+**/node_modules
+
+# build outputs
+**/dist
+**/.next
+**/build
+
+# uploads (user files)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
