@@ -146,4 +146,9 @@ export class DriverController {
   balance(@CurrentUser() user: JwtPayload) {
     return this.drivers.balanceFor(user.sub);
   }
+
+  @Get('tariff')
+  tariff() {
+    return this.drivers.getTariff();
+  }
 }

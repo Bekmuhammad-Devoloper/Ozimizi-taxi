@@ -17,6 +17,7 @@ import { BalanceService } from '../balance/balance.service';
 import { BalanceTxType } from '../balance/balance-transaction.entity';
 import { MailerService } from '../mailer/mailer.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { TariffService } from '../tariff/tariff.service';
 
 @Injectable()
 export class DriverService {
@@ -27,7 +28,17 @@ export class DriverService {
     private readonly balance: BalanceService,
     private readonly config: ConfigService,
     private readonly mailer: MailerService,
+    private readonly tariffs: TariffService,
   ) {}
+
+  async getTariff() {
+    const t = await this.tariffs.getCurrent();
+    return {
+      pricePerKm: Number(t.pricePerKm),
+      minimumFare: Number(t.minimumFare),
+      commissionPerOrder: Number(t.commissionPerOrder),
+    };
+  }
 
   async me(driverId: string): Promise<Driver> {
     const d = await this.repo.findOne({ where: { id: driverId } });

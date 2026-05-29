@@ -39,6 +39,11 @@ function ActiveInner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [client, setClient] = useState<ClientInfo | null>(null);
+  const [tariff, setTariff] = useState<{
+    pricePerKm: number;
+    minimumFare: number;
+    commissionPerOrder: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!active?.id) return;
@@ -49,6 +54,13 @@ function ActiveInner() {
       })
       .catch(() => {});
   }, [active?.id]);
+
+  useEffect(() => {
+    api
+      .get('/driver/tariff')
+      .then((r) => setTariff(r.data))
+      .catch(() => {});
+  }, []);
 
   if (!active) {
     return (
@@ -119,7 +131,7 @@ function ActiveInner() {
   return (
     <>
       {/* HERO */}
-      <header className="relative bg-ink text-white px-6 pt-10 pb-6 rounded-b-3xl overflow-hidden">
+      <header className="relative bg-ink text-white px-5 pt-7 pb-7 rounded-b-3xl overflow-hidden">
         <div
           aria-hidden
           className="absolute inset-0 opacity-30 pointer-events-none"
@@ -128,11 +140,16 @@ function ActiveInner() {
               'radial-gradient(circle at 100% 0%, rgba(250,204,21,0.45), transparent 60%)',
           }}
         />
-        <div className="relative flex items-center justify-between mb-3">
-          <p className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">
-            Buyurtma · {active.id.slice(0, 8).toUpperCase()}
-          </p>
-          <span className="text-[10px] uppercase tracking-wider bg-gold text-ink px-2.5 py-1 rounded-full font-bold">
+        <div className="relative flex items-center justify-between mb-5">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-widest text-neutral-400 font-semibold">
+              Buyurtma
+            </p>
+            <p className="text-base font-bold tracking-wider tabular-nums mt-0.5">
+              #{active.id.slice(0, 8).toUpperCase()}
+            </p>
+          </div>
+          <span className="text-[11px] uppercase tracking-wider bg-gold text-ink px-3 py-1.5 rounded-full font-bold shrink-0">
             {stepLabel}
           </span>
         </div>
@@ -199,7 +216,7 @@ function ActiveInner() {
 
       {/* IN PROGRESS metric */}
       {active.status === 'IN_PROGRESS' && (
-        <section className="px-6 mt-4">
+        <section className="px-6 mt-4 space-y-3">
           <div className="bg-ink text-white rounded-2xl p-5 relative overflow-hidden">
             <div
               aria-hidden
@@ -218,6 +235,50 @@ function ActiveInner() {
               GPS orqali avtomatik kuzatilmoqda
             </p>
           </div>
+
+          {tariff && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white border border-line rounded-2xl p-4">
+                <p className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">
+                  Joriy narx
+                </p>
+                <p className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
+                  {fmt(
+                    Math.max(
+                      trackedKm * tariff.pricePerKm,
+                      tariff.minimumFare,
+                    ),
+                  )}
+                </p>
+                <p className="mt-1 text-[11px] text-neutral-500">so‘m</p>
+              </div>
+              <div className="bg-gold/10 border border-gold/40 rounded-2xl p-4">
+                <p className="text-[10px] uppercase tracking-widest text-gold-deep font-bold">
+                  Sof daromad
+                </p>
+                <p className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
+                  {fmt(
+                    Math.max(
+                      Math.max(
+                        trackedKm * tariff.pricePerKm,
+                        tariff.minimumFare,
+                      ) - tariff.commissionPerOrder,
+                      0,
+                    ),
+                  )}
+                </p>
+                <p className="mt-1 text-[11px] text-gold-deep">
+                  so‘m · komissiya {fmt(tariff.commissionPerOrder)} ayirilgan
+                </p>
+              </div>
+            </div>
+          )}
+          {tariff && (
+            <p className="text-[11px] text-neutral-500 text-center">
+              Tarif: {fmt(tariff.pricePerKm)} so‘m/km · minimum{' '}
+              {fmt(tariff.minimumFare)} so‘m
+            </p>
+          )}
         </section>
       )}
 
@@ -337,29 +398,47 @@ const LABEL: Record<string, string> = {
 function StepProgress({ status }: { status: OrderStatus }) {
   const currentIdx = STEPS.findIndex((s) => s.key === status);
   return (
-    <div className="relative flex items-center justify-between">
+    <div className="relative flex items-start justify-between">
+      {/* connector line (behind circles) */}
+      <div
+        aria-hidden
+        className="absolute top-4 left-[10%] right-[10%] h-[3px] bg-neutral-800 rounded-full"
+      />
+      <div
+        aria-hidden
+        className="absolute top-4 left-[10%] h-[3px] bg-gold rounded-full transition-all duration-300"
+        style={{
+          width: `${Math.max(0, currentIdx) * (80 / (STEPS.length - 1))}%`,
+        }}
+      />
       {STEPS.map((step, i) => {
-        const done = i <= currentIdx;
+        const done = i < currentIdx;
         const active = i === currentIdx;
+        const pending = i > currentIdx;
         return (
-          <div key={step.key} className="flex-1 flex flex-col items-center">
+          <div
+            key={step.key}
+            className="relative flex-1 flex flex-col items-center"
+          >
             <span
               className={
-                'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ' +
-                (done
-                  ? 'bg-gold text-ink'
-                  : 'bg-neutral-800 text-neutral-500 ring-1 ring-neutral-700')
+                'w-9 h-9 rounded-full flex items-center justify-center text-sm font-extrabold transition-colors ring-2 ' +
+                (active
+                  ? 'bg-gold text-ink ring-gold shadow-lg shadow-gold/40 scale-110'
+                  : done
+                    ? 'bg-gold text-ink ring-gold/70'
+                    : 'bg-neutral-900 text-neutral-500 ring-neutral-700')
               }
             >
-              {done && !active ? <Check size={12} strokeWidth={3} /> : i + 1}
+              {done ? <Check size={18} strokeWidth={3.2} /> : i + 1}
             </span>
             <p
               className={
-                'mt-1.5 text-[9px] uppercase tracking-wider font-semibold ' +
+                'mt-2 text-[11px] uppercase tracking-wide font-bold text-center leading-tight ' +
                 (active
                   ? 'text-gold'
                   : done
-                    ? 'text-neutral-300'
+                    ? 'text-neutral-200'
                     : 'text-neutral-500')
               }
             >
@@ -368,18 +447,6 @@ function StepProgress({ status }: { status: OrderStatus }) {
           </div>
         );
       })}
-      {/* connector line */}
-      <div
-        aria-hidden
-        className="absolute top-3 left-0 right-0 h-[2px] bg-neutral-800 -z-0"
-      />
-      <div
-        aria-hidden
-        className="absolute top-3 left-0 h-[2px] bg-gold -z-0 transition-all duration-300"
-        style={{
-          width: `${Math.max(0, currentIdx) * (100 / (STEPS.length - 1))}%`,
-        }}
-      />
     </div>
   );
 }
