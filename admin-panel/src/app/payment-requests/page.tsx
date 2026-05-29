@@ -16,7 +16,8 @@ interface RequestRow {
   createdAt: string;
   decidedAt: string | null;
   driver?: { fullName: string; phone: string; balance: string };
-  requester?: { username: string };
+  requester?: { username: string } | null;
+  driverRequester?: { fullName: string } | null;
   decider?: { username: string } | null;
 }
 
@@ -101,7 +102,16 @@ export default function PaymentRequestsPage() {
                     hour: '2-digit',
                     minute: '2-digit',
                   })}{' '}
-                  · Koordinator: <b>{r.requester?.username ?? '—'}</b>
+                  ·{' '}
+                  {r.driverRequester ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gold/15 text-gold-deep font-bold uppercase tracking-wide text-[10px]">
+                      🤖 Wallet bot
+                    </span>
+                  ) : (
+                    <>
+                      Koordinator: <b>{r.requester?.username ?? '—'}</b>
+                    </>
+                  )}
                   {r.note ? ' · ' + r.note : ''}
                 </p>
                 {r.decider && (

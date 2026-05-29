@@ -30,14 +30,18 @@ import { AdminModule } from './modules/admin/admin.module';
 import { BotModule } from './modules/bot/bot.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { GatewaysModule } from './modules/realtime/gateways.module';
+import { WalletBotModule } from './modules/wallet-bot/wallet-bot.module';
 
-function hasRealBotToken(): boolean {
-  const t = process.env.BOT_TOKEN ?? '';
+function isRealTelegramToken(t: string | undefined): boolean {
   // Real BotFather tokens look like "<digits>:<35-char alnum>". Reject placeholders.
-  return /^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(t) && !t.includes('placeholder');
+  return (
+    !!t && /^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(t) && !t.includes('placeholder')
+  );
 }
 
-const botImports: DynamicModule['imports'] = hasRealBotToken()
+const botImports: DynamicModule['imports'] = isRealTelegramToken(
+  process.env.BOT_TOKEN,
+)
   ? [
       TelegrafModule.forRootAsync({
         inject: [ConfigService],
@@ -47,6 +51,12 @@ const botImports: DynamicModule['imports'] = hasRealBotToken()
       }),
       BotModule,
     ]
+  : [];
+
+const walletBotImports: DynamicModule['imports'] = isRealTelegramToken(
+  process.env.WALLET_BOT_TOKEN,
+)
+  ? [WalletBotModule]
   : [];
 
 @Module({
@@ -94,6 +104,7 @@ const botImports: DynamicModule['imports'] = hasRealBotToken()
     AdminModule,
     GatewaysModule,
     ...botImports,
+    ...walletBotImports,
   ],
 })
 export class AppModule {}

@@ -42,12 +42,21 @@ export class PaymentRequest {
   })
   status: PaymentRequestStatus;
 
-  @Column({ name: 'requested_by', type: 'uuid' })
-  requestedBy: string;
+  // Either admin/coordinator (requestedBy) OR driver (requestedByDriver),
+  // never both. Enforced by a DB check constraint.
+  @Column({ name: 'requested_by', type: 'uuid', nullable: true })
+  requestedBy: string | null;
 
   @ManyToOne(() => Admin, { nullable: true })
   @JoinColumn({ name: 'requested_by' })
   requester: Admin | null;
+
+  @Column({ name: 'requested_by_driver', type: 'uuid', nullable: true })
+  requestedByDriver: string | null;
+
+  @ManyToOne(() => Driver, { nullable: true })
+  @JoinColumn({ name: 'requested_by_driver' })
+  driverRequester: Driver | null;
 
   @Column({ name: 'decided_by', type: 'uuid', nullable: true })
   decidedBy: string | null;

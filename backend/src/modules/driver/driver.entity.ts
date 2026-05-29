@@ -79,6 +79,16 @@ export class Driver {
   })
   carPhotoUrl: string | null;
 
+  // Set when the driver runs /start in @ozimizitaxi_walletbot and shares their
+  // contact. Used by the wallet bot to DM withdrawal/top-up verdicts.
+  @Index({ unique: true, where: 'wallet_telegram_id IS NOT NULL' })
+  @Column({
+    name: 'wallet_telegram_id',
+    type: 'bigint',
+    nullable: true,
+  })
+  walletTelegramId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
