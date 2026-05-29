@@ -59,7 +59,9 @@ export default function RegisterPage() {
         password,
       });
       setAuth(data.access_token, data.driver);
-      router.replace('/dashboard');
+      // Self-registration always lands on /pending; the page polls until
+      // the admin approves, then redirects to /dashboard automatically.
+      router.replace(data.driver?.isApproved ? '/dashboard' : '/pending');
     } catch (err: any) {
       const m = err?.response?.data?.message;
       setError(

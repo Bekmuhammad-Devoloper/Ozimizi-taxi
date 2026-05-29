@@ -47,7 +47,7 @@ export default function LoginPage() {
         password,
       });
       setAuth(data.access_token, data.driver);
-      router.replace('/dashboard');
+      router.replace(data.driver?.isApproved ? '/dashboard' : '/pending');
     } catch (err: any) {
       setError(err?.response?.data?.message ?? 'Kirib bo‘lmadi');
     } finally {
