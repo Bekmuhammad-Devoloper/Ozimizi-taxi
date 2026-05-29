@@ -22,7 +22,8 @@ export default function LoginPage() {
         password,
       });
       Cookies.set('admin_token', data.access_token, { expires: 7 });
-      router.replace('/dashboard');
+      const role = data?.admin?.role ?? 'admin';
+      router.replace(role === 'coordinator' ? '/coordinator' : '/dashboard');
     } catch (e: any) {
       setErr(e?.response?.data?.message ?? 'Kirib bo‘lmadi');
     } finally {

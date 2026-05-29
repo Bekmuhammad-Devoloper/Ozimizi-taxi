@@ -39,6 +39,15 @@ export class DriverService {
     const driver = await this.repo.findOne({ where: { id: driverId } });
     if (!driver) throw new NotFoundException('Driver not found');
 
+    if (!driver.isActive) {
+      throw new BadRequestException('Hisobingiz faol emas');
+    }
+    if (!driver.isOnline && !driver.isApproved) {
+      throw new BadRequestException(
+        'Hisobingiz hali admin tomonidan tasdiqlanmagan.',
+      );
+    }
+
     // Profile must be complete before going online
     if (!driver.isOnline && !this.isProfileComplete(driver)) {
       throw new BadRequestException(
@@ -86,6 +95,10 @@ export class DriverService {
     return this.orderService.complete(driverId, orderId, dto.distanceKm);
   }
 
+  cancel(driverId: string, orderId: string) {
+    return this.orderService.cancelByDriver(driverId, orderId);
+  }
+
   history(driverId: string) {
     return this.orderService.history(driverId);
   }
@@ -129,6 +142,9 @@ export class DriverService {
       phone,
       email,
       passwordHash,
+      // Admin-created drivers are trusted by definition — they skip the
+      // approval queue. Telegram self-registrations stay pending.
+      isApproved: true,
     });
     const saved = await this.repo.save(driver);
 
@@ -151,17 +167,55 @@ export class DriverService {
   }
 
   async listForAdmin() {
-    return this.repo.find({ order: { createdAt: 'DESC' } });
+    // Includes ordersCount (completed orders only) so the admin dashboard
+    // can render the "top drivers" chart without a separate round-trip.
+    const rows = await this.repo
+      .createQueryBuilder('d')
+      .leftJoin(
+        'orders',
+        'o',
+        "o.driver_id = d.id AND o.status = 'COMPLETED'",
+      )
+      .addSelect('COUNT(o.id)', 'orders_count')
+      .groupBy('d.id')
+      .orderBy('d.created_at', 'DESC')
+      .getRawAndEntities();
+
+    return rows.entities.map((d, i) => ({
+      ...d,
+      ordersCount: Number(rows.raw[i]?.orders_count ?? 0),
+    }));
   }
 
   async softDelete(id: string) {
     const driver = await this.repo.findOne({ where: { id } });
     if (!driver) throw new NotFoundException('Driver not found');
+    // Closed-loop: whatever the driver was holding goes back to the treasury
+    // before we deactivate them.
+    await this.balance.drainDriverToTreasury(id, 'Driver removed by admin');
     driver.isActive = false;
     driver.isOnline = false;
     await this.repo.save(driver);
     await this.repo.softDelete(id);
     return { ok: true };
+  }
+
+  async approve(id: string): Promise<Driver> {
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (driver.isApproved) return driver;
+    driver.isApproved = true;
+    return this.repo.save(driver);
+  }
+
+  async reject(id: string): Promise<Driver> {
+    // "Rejecting" is non-destructive: it just clears the approval and forces
+    // the driver offline. Use softDelete() for permanent removal.
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    driver.isApproved = false;
+    driver.isOnline = false;
+    return this.repo.save(driver);
   }
 
   async adjustBalance(id: string, amount: number, note?: string) {

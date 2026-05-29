@@ -126,8 +126,7 @@ function Inner() {
                 Olib ketish
               </p>
               <p className="text-sm leading-snug mt-0.5">
-                {order.pickupAddress ||
-                  `${order.pickupLat.toFixed(5)}, ${order.pickupLng.toFixed(5)}`}
+                {order.pickupAddress || 'Manzil aniqlanmagan'}
               </p>
             </div>
           </div>

@@ -103,14 +103,15 @@ export class AuthService {
     const ok = await bcrypt.compare(dto.password, admin.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
+    const role = (admin.role ?? 'admin') as 'admin' | 'coordinator';
     const payload: JwtPayload = {
       sub: admin.id,
-      role: 'admin',
+      role,
       username: admin.username,
     };
     return {
       access_token: await this.jwt.signAsync(payload),
-      admin: { id: admin.id, username: admin.username },
+      admin: { id: admin.id, username: admin.username, role },
     };
   }
 
@@ -193,6 +194,7 @@ export class AuthService {
       email: driver.email,
       balance: driver.balance,
       isOnline: driver.isOnline,
+      isApproved: driver.isApproved,
       avatarUrl: driver.avatarUrl,
       carModel: driver.carModel,
       carColor: driver.carColor,

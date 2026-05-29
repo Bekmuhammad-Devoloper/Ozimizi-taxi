@@ -66,15 +66,16 @@ export function IncomingOrderModal() {
 
         <dl className="space-y-3 mb-6">
           <div className="flex justify-between text-sm">
-            <dt className="text-neutral-500">Pickup</dt>
+            <dt className="text-neutral-500">Olib ketish</dt>
             <dd className="text-right max-w-[60%]">
-              {incoming.pickup.address ||
-                `${incoming.pickup.lat.toFixed(4)}, ${incoming.pickup.lng.toFixed(4)}`}
+              {incoming.pickup.address || 'Manzil aniqlanmagan'}
             </dd>
           </div>
           <div className="flex justify-between text-sm">
-            <dt className="text-neutral-500">Masofa</dt>
-            <dd>{incoming.distanceFromDriver.toFixed(1)} km</dd>
+            <dt className="text-neutral-500">Sizgacha masofa</dt>
+            <dd className="font-semibold">
+              {incoming.distanceFromDriver.toFixed(1)} km
+            </dd>
           </div>
         </dl>
 

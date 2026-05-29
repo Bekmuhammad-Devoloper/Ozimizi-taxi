@@ -104,9 +104,11 @@ function ActiveInner() {
     setBusy(true);
     setErr(null);
     try {
-      setActive({ ...active, status: 'CANCELLED' });
-      // optimistic — backend cancel is admin/client driven, but we'll just go back
+      await api.post(`/driver/orders/${active.id}/cancel`);
+      setActive(null);
       router.replace('/dashboard');
+    } catch (e: any) {
+      setErr(e?.response?.data?.message ?? 'Bekor qilib bo‘lmadi');
     } finally {
       setBusy(false);
     }
@@ -175,8 +177,7 @@ function ActiveInner() {
                 Olib ketish joyi
               </p>
               <p className="text-sm text-ink leading-snug mt-0.5">
-                {active.pickupAddress ||
-                  `${active.pickupLat.toFixed(5)}, ${active.pickupLng.toFixed(5)}`}
+                {active.pickupAddress || 'Manzil aniqlanmagan'}
               </p>
             </div>
           </div>

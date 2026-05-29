@@ -14,7 +14,11 @@ import { BalanceTransaction } from './modules/balance/balance-transaction.entity
 import { Tariff } from './modules/tariff/tariff.entity';
 import { Admin } from './modules/admin/admin.entity';
 import { PasswordResetToken } from './modules/auth/password-reset-token.entity';
+import { SiteSetting } from './modules/settings/site-setting.entity';
+import { PaymentRequest } from './modules/payment/payment-request.entity';
 import { MailerModule } from './modules/mailer/mailer.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientModule } from './modules/client/client.module';
@@ -70,12 +74,16 @@ const botImports: DynamicModule['imports'] = hasRealBotToken()
           Tariff,
           Admin,
           PasswordResetToken,
+          SiteSetting,
+          PaymentRequest,
         ],
         autoLoadEntities: true,
         synchronize: false,
       }),
     }),
     MailerModule,
+    SettingsModule,
+    PaymentModule,
     RealtimeModule,
     AuthModule,
     ClientModule,

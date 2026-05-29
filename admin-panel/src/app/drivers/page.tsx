@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Wallet, Eye } from 'lucide-react';
+import { Plus, Trash2, Wallet, Eye, Check, X } from 'lucide-react';
 import Link from 'next/link';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
@@ -13,6 +13,7 @@ interface DriverRow {
   email: string | null;
   isOnline: boolean;
   isActive: boolean;
+  isApproved: boolean;
   balance: string;
   createdAt: string;
 }
@@ -30,6 +31,18 @@ export default function DriversPage() {
   const remove = useMutation({
     mutationFn: async (id: string) =>
       (await api.delete(`/admin/drivers/${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+  });
+
+  const approve = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/drivers/${id}/approve`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+  });
+
+  const reject = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/drivers/${id}/reject`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
   });
 
@@ -62,26 +75,33 @@ export default function DriversPage() {
                 {initials(d.fullName)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="font-semibold truncate">{d.fullName}</p>
-                  <span
-                    className={
-                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ' +
-                      (d.isOnline
-                        ? 'bg-green-50 text-green-700 border border-green-200'
-                        : 'bg-neutral-100 text-neutral-500 border border-neutral-200')
-                    }
-                  >
+                  <div className="flex items-center gap-1">
+                    {!d.isApproved && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
+                        Tasdiq kerak
+                      </span>
+                    )}
                     <span
                       className={
-                        'w-1.5 h-1.5 rounded-full ' +
+                        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ' +
                         (d.isOnline
-                          ? 'bg-green-500 animate-pulse'
-                          : 'bg-neutral-400')
+                          ? 'bg-green-50 text-green-700 border border-green-200'
+                          : 'bg-neutral-100 text-neutral-500 border border-neutral-200')
                       }
-                    />
-                    {d.isOnline ? 'Online' : 'Offline'}
-                  </span>
+                    >
+                      <span
+                        className={
+                          'w-1.5 h-1.5 rounded-full ' +
+                          (d.isOnline
+                            ? 'bg-green-500 animate-pulse'
+                            : 'bg-neutral-400')
+                        }
+                      />
+                      {d.isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-neutral-500 font-mono mt-0.5">
                   {d.phone}
@@ -106,6 +126,26 @@ export default function DriversPage() {
                 </p>
               </div>
               <div className="flex gap-1">
+                {!d.isApproved ? (
+                  <button
+                    onClick={() => approve.mutate(d.id)}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center bg-green-600 text-white"
+                    title="Tasdiqlash"
+                  >
+                    <Check size={16} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (confirm(`${d.fullName} tasdig'i bekor qilinsinmi?`))
+                        reject.mutate(d.id);
+                    }}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center bg-orange-50 text-orange-700"
+                    title="Tasdiqni olib tashlash"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
                 <Link
                   href={`/drivers/${d.id}`}
                   className="w-9 h-9 rounded-lg flex items-center justify-center bg-neutral-100 text-neutral-700"
@@ -181,22 +221,29 @@ export default function DriversPage() {
                   {d.email ?? <span className="text-neutral-300">—</span>}
                 </td>
                 <td className="td">
-                  <span
-                    className={
-                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ' +
-                      (d.isOnline
-                        ? 'bg-green-50 text-green-700 border border-green-200'
-                        : 'bg-neutral-100 text-neutral-500 border border-neutral-200')
-                    }
-                  >
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={
-                        'w-1.5 h-1.5 rounded-full ' +
-                        (d.isOnline ? 'bg-green-500 animate-pulse' : 'bg-neutral-400')
+                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ' +
+                        (d.isOnline
+                          ? 'bg-green-50 text-green-700 border border-green-200'
+                          : 'bg-neutral-100 text-neutral-500 border border-neutral-200')
                       }
-                    />
-                    {d.isOnline ? 'Online' : 'Offline'}
-                  </span>
+                    >
+                      <span
+                        className={
+                          'w-1.5 h-1.5 rounded-full ' +
+                          (d.isOnline ? 'bg-green-500 animate-pulse' : 'bg-neutral-400')
+                        }
+                      />
+                      {d.isOnline ? 'Online' : 'Offline'}
+                    </span>
+                    {!d.isApproved && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
+                        Tasdiq kerak
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="td text-right font-bold tabular-nums">
                   {Number(d.balance).toLocaleString('uz')}
@@ -213,6 +260,28 @@ export default function DriversPage() {
                 </td>
                 <td className="td">
                   <div className="flex gap-1 justify-end">
+                    {!d.isApproved ? (
+                      <button
+                        onClick={() => approve.mutate(d.id)}
+                        title="Tasdiqlash"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-600 text-white hover:bg-green-700"
+                      >
+                        <Check size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (
+                            confirm(`${d.fullName} tasdig'i bekor qilinsinmi?`)
+                          )
+                            reject.mutate(d.id);
+                        }}
+                        title="Tasdiqni olib tashlash"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-orange-50 text-orange-700"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
                     <Link
                       href={`/drivers/${d.id}`}
                       title="Ko'rish"

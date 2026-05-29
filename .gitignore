@@ -12,6 +12,7 @@ backend/.startdev.log
 **/dist
 **/.next
 **/build
+**/tsconfig.tsbuildinfo
 
 # uploads (user files)
 backend/uploads/*

@@ -1,7 +1,12 @@
 """SSH helper for deployment scripts. Reads commands from argv or stdin."""
+import io
 import os
 import sys
 import paramiko
+
+# Force UTF-8 stdout/stderr (Windows defaults to cp1251 which breaks emoji/arrows)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 HOST = os.environ.get("SSH_HOST", "104.248.25.130")
 PORT = int(os.environ.get("SSH_PORT", "22"))

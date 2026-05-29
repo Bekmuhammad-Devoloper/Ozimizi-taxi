@@ -1,8 +1,10 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
+export type Role = 'driver' | 'admin' | 'coordinator';
+
 export interface JwtPayload {
   sub: string;
-  role: 'driver' | 'admin';
+  role: Role;
   phone?: string;
   username?: string;
 }

@@ -1,7 +1,15 @@
 'use client';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Download, Filter, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Download,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Flag,
+  X as XIcon,
+} from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 
@@ -28,6 +36,7 @@ const STATUSES = [
 ] as const;
 
 export default function OrdersPage() {
+  const qc = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [status, setStatus] = useState<string[]>([]);
@@ -44,6 +53,20 @@ export default function OrdersPage() {
       return (await api.get('/admin/orders', { params })).data;
     },
   });
+
+  const forceCancel = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/orders/${id}/cancel`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['orders'] }),
+  });
+
+  const forceComplete = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/orders/${id}/complete`, { distanceKm: 0 })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['orders'] }),
+  });
+
+  const isFinal = (s: string) => s === 'COMPLETED' || s === 'CANCELLED';
 
   const toggleStatus = (s: string) => {
     setStatus((curr) =>
@@ -202,6 +225,34 @@ export default function OrdersPage() {
                 </span>
               </p>
             </div>
+            {!isFinal(o.status) && (
+              <div className="flex gap-2 mt-3">
+                <button
+                  disabled={forceComplete.isPending}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        'Buyurtmani majburiy yakunlaysizmi? Komissiya haydovchidan yechiladi.',
+                      )
+                    )
+                      forceComplete.mutate(o.id);
+                  }}
+                  className="flex-1 h-9 rounded-lg bg-green-50 text-green-700 text-xs font-bold flex items-center justify-center gap-1"
+                >
+                  <Flag size={14} /> Yakunlash
+                </button>
+                <button
+                  disabled={forceCancel.isPending}
+                  onClick={() => {
+                    if (confirm('Buyurtmani bekor qilasizmi?'))
+                      forceCancel.mutate(o.id);
+                  }}
+                  className="flex-1 h-9 rounded-lg bg-red-50 text-red-600 text-xs font-bold flex items-center justify-center gap-1"
+                >
+                  <XIcon size={14} /> Bekor qilish
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -219,19 +270,20 @@ export default function OrdersPage() {
                 <th className="th text-right">Narx</th>
                 <th className="th text-right">Komissiya</th>
                 <th className="th">Status</th>
+                <th className="th text-right">Amallar</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-neutral-500">
+                  <td colSpan={9} className="p-10 text-center text-neutral-500">
                     Yuklanmoqda…
                   </td>
                 </tr>
               )}
               {!isLoading && (!data?.items || data.items.length === 0) && (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-neutral-500">
+                  <td colSpan={9} className="p-10 text-center text-neutral-500">
                     Filterga mos buyurtma topilmadi
                   </td>
                 </tr>
@@ -277,6 +329,40 @@ export default function OrdersPage() {
                   </td>
                   <td className="td">
                     <StatusBadge status={o.status} />
+                  </td>
+                  <td className="td">
+                    <div className="flex gap-1 justify-end">
+                      {!isFinal(o.status) && (
+                        <>
+                          <button
+                            disabled={forceComplete.isPending}
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  'Buyurtmani majburiy yakunlaysizmi? Komissiya haydovchidan yechiladi.',
+                                )
+                              )
+                                forceComplete.mutate(o.id);
+                            }}
+                            title="Yakunlash"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-green-50 text-green-700"
+                          >
+                            <Flag size={14} />
+                          </button>
+                          <button
+                            disabled={forceCancel.isPending}
+                            onClick={() => {
+                              if (confirm('Buyurtmani bekor qilasizmi?'))
+                                forceCancel.mutate(o.id);
+                            }}
+                            title="Bekor qilish"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-600"
+                          >
+                            <XIcon size={14} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

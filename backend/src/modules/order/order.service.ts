@@ -15,6 +15,9 @@ import { BalanceTxType } from '../balance/balance-transaction.entity';
 import { RealtimeService } from '../realtime/realtime.service';
 import { haversineKm } from '../../common/utils/haversine';
 import { OrderEvents } from './order.events';
+import { Client } from '../client/client.entity';
+import { SettingsService } from '../settings/settings.service';
+import { Logger } from '@nestjs/common';
 
 export interface OrdersFilter {
   from?: Date;
@@ -28,14 +31,18 @@ export interface OrdersFilter {
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     @InjectRepository(Order) private readonly orders: Repository<Order>,
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
+    @InjectRepository(Client) private readonly clientsRepo: Repository<Client>,
     private readonly tariff: TariffService,
     private readonly balance: BalanceService,
     private readonly realtime: RealtimeService,
     private readonly events: OrderEvents,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly ds: DataSource,
   ) {}
 
@@ -60,7 +67,7 @@ export class OrderService {
       this.config.get('ORDER_BROADCAST_RADIUS_KM') ?? 5,
     );
     const onlineDrivers = await this.drivers.find({
-      where: { isOnline: true, isActive: true },
+      where: { isOnline: true, isActive: true, isApproved: true },
     });
 
     for (const d of onlineDrivers) {
@@ -89,6 +96,18 @@ export class OrderService {
   /** Atomic accept — first writer wins. */
   async accept(driverId: string, orderId: string): Promise<Order> {
     return this.ds.transaction(async (em) => {
+      // Defense in depth: a soft-deleted or admin-deactivated driver must
+      // never be able to claim an order even if their JWT is still valid.
+      const me = await em.getRepository(Driver).findOne({
+        where: { id: driverId },
+      });
+      if (!me || !me.isActive) {
+        throw new BadRequestException('Hisobingiz faol emas');
+      }
+      if (!me.isApproved) {
+        throw new BadRequestException('Hisobingiz tasdiqlanmagan');
+      }
+
       // Prevent driver from holding two active orders simultaneously.
       const activeStatuses = [
         OrderStatus.ACCEPTED,
@@ -230,14 +249,19 @@ export class OrderService {
     driverId: string,
     orderId: string,
     distanceKm: number,
+    opts: { allowAnyStatus?: boolean } = {},
   ): Promise<Order> {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');
     if (order.driverId !== driverId) {
       throw new BadRequestException('Not your order');
     }
-    if (order.status !== OrderStatus.IN_PROGRESS) {
+    if (!opts.allowAnyStatus && order.status !== OrderStatus.IN_PROGRESS) {
       throw new BadRequestException('Order must be IN_PROGRESS to complete');
+    }
+    if (order.status === OrderStatus.COMPLETED) return order;
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('Bekor qilingan buyurtmani yakunlab bo‘lmaydi');
     }
     const tariff = await this.tariff.getCurrent();
     const pricePerKm = Number(tariff.pricePerKm);
@@ -254,15 +278,25 @@ export class OrderService {
     order.completedAt = new Date();
     const saved = await this.orders.save(order);
 
-    // Driver earns net = price - commission (added to balance)
-    const net = price - commission;
+    // Closed-loop financial model: driver receives the fare in cash from the
+    // passenger (off-system), then owes commission to the treasury. So the
+    // only on-ledger movement is `-commission` from driver to admin.
     await this.balance.adjust({
       driverId,
-      amount: net,
+      amount: -commission,
       type: BalanceTxType.COMMISSION,
       orderId: saved.id,
       note: `Order ${saved.id} completed: price=${price.toFixed(2)}, commission=${commission.toFixed(2)}`,
     });
+
+    // Referral bonus: paid out only once, on the client's first COMPLETED
+    // order, and only if they were referred by someone other than themselves.
+    // Bonuses are drawn from the treasury, preserving the 100M invariant.
+    await this.maybePayReferralBonus(saved.id, saved.clientId).catch((e) =>
+      this.logger.warn(
+        `Referral bonus failed for order ${saved.id}: ${(e as Error).message}`,
+      ),
+    );
 
     this.realtime.emitToAdmin('order_completed', this.toPlain(saved));
     const driver = await this.drivers.findOne({ where: { id: driverId } });
@@ -281,6 +315,55 @@ export class OrderService {
         : undefined,
     });
     return saved;
+  }
+
+  /**
+   * Driver-initiated cancellation. Only allowed for orders the driver owns
+   * and only before IN_PROGRESS — once the ride has started the order must
+   * be completed normally.
+   */
+  async cancelByDriver(driverId: string, orderId: string): Promise<Order> {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.driverId !== driverId) {
+      throw new BadRequestException('Not your order');
+    }
+    const cancellable = [
+      OrderStatus.ACCEPTED,
+      OrderStatus.ON_THE_WAY,
+      OrderStatus.ARRIVED,
+    ];
+    if (!cancellable.includes(order.status)) {
+      throw new BadRequestException(
+        'Bu bosqichda bekor qilib bo‘lmaydi',
+      );
+    }
+    return this.cancel(orderId, 'driver');
+  }
+
+  /**
+   * Admin-initiated completion — unwinds an order regardless of its current
+   * state. Used to resolve stuck orders (no-shows, broken driver phones).
+   * Uses the supplied distance, or falls back to 0 (which trips minimumFare).
+   */
+  async forceCompleteByAdmin(
+    orderId: string,
+    distanceKm: number | undefined,
+  ): Promise<Order> {
+    const order = await this.orders.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === OrderStatus.COMPLETED) return order;
+    if (!order.driverId) {
+      throw new BadRequestException(
+        'Buyurtmaga haydovchi biriktirilmagan — yakunlab bo‘lmaydi',
+      );
+    }
+    return this.complete(
+      order.driverId,
+      orderId,
+      Math.max(0, distanceKm ?? 0),
+      { allowAnyStatus: true },
+    );
   }
 
   async cancel(orderId: string, by: 'client' | 'driver' | 'admin'): Promise<Order> {
@@ -419,5 +502,43 @@ export class OrderService {
 
   private toPlain(order: Order) {
     return { ...order };
+  }
+
+  /**
+   * On the client's first ever COMPLETED order, credit both the client and
+   * their referrer (if any) with the configured bonus amounts. Both bonuses
+   * are debited from the treasury so the 100M invariant holds.
+   */
+  private async maybePayReferralBonus(orderId: string, clientId: string) {
+    const completedForClient = await this.orders.count({
+      where: { clientId, status: OrderStatus.COMPLETED },
+    });
+    // The just-saved order is already COMPLETED, so "first ever" means count===1.
+    if (completedForClient !== 1) return;
+
+    const client = await this.clientsRepo.findOne({ where: { id: clientId } });
+    if (!client?.referredById) return;
+
+    const clientBonus = Number(
+      (await this.settings.get('referral_bonus_client')) || '0',
+    );
+    const referrerBonus = Number(
+      (await this.settings.get('referral_bonus_referrer')) || '0',
+    );
+
+    if (clientBonus > 0) {
+      await this.balance.adjustClient({
+        clientId: client.id,
+        amount: clientBonus,
+        note: `Referral bonus for first ride (order ${orderId.slice(0, 8)})`,
+      });
+    }
+    if (referrerBonus > 0) {
+      await this.balance.adjustClient({
+        clientId: client.referredById,
+        amount: referrerBonus,
+        note: `Referral bonus: invited ${client.firstName} (order ${orderId.slice(0, 8)})`,
+      });
+    }
   }
 }

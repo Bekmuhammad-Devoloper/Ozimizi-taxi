@@ -8,6 +8,8 @@ import { BalanceTransaction } from '../modules/balance/balance-transaction.entit
 import { Tariff } from '../modules/tariff/tariff.entity';
 import { Admin } from '../modules/admin/admin.entity';
 import { PasswordResetToken } from '../modules/auth/password-reset-token.entity';
+import { SiteSetting } from '../modules/settings/site-setting.entity';
+import { PaymentRequest } from '../modules/payment/payment-request.entity';
 
 config();
 
@@ -22,6 +24,8 @@ export const AppDataSource = new DataSource({
     Tariff,
     Admin,
     PasswordResetToken,
+    SiteSetting,
+    PaymentRequest,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
   migrationsTableName: 'migrations',

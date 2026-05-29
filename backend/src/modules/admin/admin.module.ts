@@ -6,6 +6,8 @@ import { DriverModule } from '../driver/driver.module';
 import { ClientModule } from '../client/client.module';
 import { OrderModule } from '../order/order.module';
 import { TariffModule } from '../tariff/tariff.module';
+import { BalanceModule } from '../balance/balance.module';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { TariffModule } from '../tariff/tariff.module';
     ClientModule,
     OrderModule,
     TariffModule,
+    BalanceModule,
+    PaymentModule,
   ],
   controllers: [AdminController],
 })

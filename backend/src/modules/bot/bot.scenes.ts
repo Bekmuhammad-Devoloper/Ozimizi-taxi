@@ -10,6 +10,7 @@ interface SessionData {
   step: RegStep;
   firstName?: string;
   phonePrimary?: string;
+  refCode?: string | null;
 }
 
 export class SessionStore {

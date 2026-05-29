@@ -3,6 +3,8 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -26,6 +28,22 @@ export class Client {
 
   @Column({ name: 'phone_secondary', type: 'varchar', length: 32, nullable: true })
   phoneSecondary: string | null;
+
+  // Wallet, fed by referral bonuses and admin top-ups. Part of the closed
+  // 100M treasury loop.
+  @Column({ type: 'numeric', precision: 14, scale: 2, default: 0 })
+  balance: string;
+
+  // Short shareable code (e.g. "AB12CD34") used as Telegram /start param.
+  @Column({ name: 'ref_code', type: 'varchar', length: 16, nullable: true })
+  refCode: string | null;
+
+  @Column({ name: 'referred_by_id', type: 'uuid', nullable: true })
+  referredById: string | null;
+
+  @ManyToOne(() => Client, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'referred_by_id' })
+  referredBy: Client | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

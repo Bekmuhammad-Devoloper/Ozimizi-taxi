@@ -11,24 +11,50 @@ import {
   Users,
   Receipt,
   LogOut,
+  Settings,
+  Wallet,
+  Inbox,
+  ShieldCheck,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useUiStore } from '@/stores/ui';
 
-const items = [
+const adminItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Buyurtmalar', icon: ListOrdered },
   { href: '/drivers', label: 'Haydovchilar', icon: Car },
   { href: '/clients', label: 'Klientlar', icon: Users },
+  { href: '/payment-requests', label: 'To‘lov so‘rovlari', icon: Inbox },
+  { href: '/coordinators', label: 'Koordinatorlar', icon: ShieldCheck },
   { href: '/tariff', label: 'Tariflar', icon: Receipt },
+  { href: '/settings', label: 'Sozlamalar', icon: Settings },
 ];
+
+const coordinatorItems = [
+  { href: '/coordinator', label: 'To‘lov yuborish', icon: Wallet },
+];
+
+function decodeRole(token: string | undefined): 'admin' | 'coordinator' | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const p = JSON.parse(json);
+    return p?.role === 'coordinator' ? 'coordinator' : 'admin';
+  } catch {
+    return null;
+  }
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const open = useUiStore((s) => s.sidebarOpen);
   const setOpen = useUiStore((s) => s.setSidebarOpen);
+  const role = decodeRole(Cookies.get('admin_token'));
+  const items = role === 'coordinator' ? coordinatorItems : adminItems;
 
   // Close drawer on route change (mobile)
   useEffect(() => {
@@ -80,7 +106,9 @@ export function Sidebar() {
             <p className="text-sm font-bold tracking-wide leading-tight">
               OZIMIZNI
             </p>
-            <p className="text-xs text-gold leading-tight">TAXI · Admin</p>
+            <p className="text-xs text-gold leading-tight">
+              TAXI · {role === 'coordinator' ? 'Koordinator' : 'Admin'}
+            </p>
           </div>
           <button
             onClick={() => setOpen(false)}

@@ -112,7 +112,11 @@ function DashboardInner() {
             </p>
           </div>
 
-          {driver?.profileComplete === false ? (
+          {driver?.isApproved === false ? (
+            <span className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-orange-100 text-orange-800 text-sm font-bold border border-orange-300">
+              <AlertTriangle size={16} /> Tasdiq kutilmoqda
+            </span>
+          ) : driver?.profileComplete === false ? (
             <Link
               href="/profile"
               className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-gold text-ink text-sm font-bold shadow-lg shadow-gold/30 active:scale-[0.98]"
@@ -374,16 +378,26 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// Local-timezone YYYY-MM-DD. toISOString() returns UTC and silently shifts
+// the "day" in UZ (UTC+5) for ~5 hours after local midnight, so we format
+// in local time instead.
+function localDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function computeToday(history: OrderModel[]) {
-  const today = new Date().toISOString().slice(0, 10);
-  return summarize(history, (d) => d === today);
+  const today = localDay(new Date());
+  return summarize(history, (_, ts) => ts != null && localDay(ts) === today);
 }
 
 function computeYesterday(history: OrderModel[]) {
   const y = new Date();
   y.setDate(y.getDate() - 1);
-  const day = y.toISOString().slice(0, 10);
-  return summarize(history, (d) => d === day);
+  const day = localDay(y);
+  return summarize(history, (_, ts) => ts != null && localDay(ts) === day);
 }
 
 function computeWeek(history: OrderModel[]) {

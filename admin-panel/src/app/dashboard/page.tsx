@@ -9,6 +9,7 @@ import {
   Radio,
   CheckCircle2,
   Sparkles,
+  Vault,
 } from 'lucide-react';
 import {
   Bar,
@@ -112,7 +113,14 @@ export default function DashboardPage() {
         </div>
       }
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+        <StatsCard
+          title="Treasury balans"
+          value={fmt(stats?.treasuryBalance ?? 0) + ' so‘m'}
+          icon={Vault}
+          accent="bg-ink text-gold"
+          hint="100M tizimda"
+        />
         <StatsCard
           title="Aylanma"
           value={fmt(stats?.totalRevenue ?? 0) + ' so‘m'}

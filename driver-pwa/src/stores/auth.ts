@@ -8,6 +8,7 @@ export interface DriverInfo {
   email?: string | null;
   balance: string;
   isOnline: boolean;
+  isApproved?: boolean;
   avatarUrl?: string | null;
   carModel?: string | null;
   carColor?: string | null;

@@ -39,6 +39,12 @@ export class Driver {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  // Admin must approve before the driver can go online. Drivers created by
+  // an admin are approved at creation time; Telegram self-registrations
+  // start at false and must be approved from the admin panel.
+  @Column({ name: 'is_approved', default: false })
+  isApproved: boolean;
+
   @Column({
     name: 'current_lat',
     type: 'double precision',

@@ -117,6 +117,11 @@ export class DriverController {
     return this.drivers.complete(user.sub, id, dto);
   }
 
+  @Post('orders/:id/cancel')
+  cancelOrder(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.drivers.cancel(user.sub, id);
+  }
+
   @Get('orders/history')
   history(@CurrentUser() user: JwtPayload) {
     return this.drivers.history(user.sub);

@@ -16,6 +16,7 @@ import { ClientService } from '../client/client.service';
 import { OrderService } from '../order/order.service';
 import { SessionStore } from './bot.scenes';
 import { OrderEvents, DriverSummary } from '../order/order.events';
+import { SettingsService } from '../settings/settings.service';
 
 const PHONE_REGEX = /^\+?\d{9,15}$/;
 
@@ -29,10 +30,25 @@ function fmtMoney(v: string | number | null | undefined): string {
   return Number(v).toLocaleString('uz');
 }
 
+const BTN = {
+  order: '🚖 Taxi chaqirish',
+  invite: '🎁 Do‘stlarni taklif qilish',
+  instagram: '📷 Instagram sahifasi',
+  bonus: '⭐ Bonus',
+  becomeDriver: '🚕 Haydovchi bo‘lish',
+  contactAdmin: '💬 Admin bilan aloqa',
+  myOrders: '📋 Buyurtmalarim',
+  settings: '⚙️ Sozlamalar',
+  cancel: '❌ Bekor qilish',
+};
+
 const mainMenu = () =>
   Markup.keyboard([
-    ['🚖 Taxi chaqirish'],
-    ['📋 Buyurtmalarim', '⚙️ Sozlamalar'],
+    [BTN.order],
+    [BTN.invite, BTN.instagram],
+    [BTN.bonus, BTN.becomeDriver],
+    [BTN.contactAdmin],
+    [BTN.myOrders, BTN.settings],
   ])
     .resize()
     .persistent();
@@ -67,6 +83,7 @@ export class BotUpdate implements OnModuleInit {
     private readonly orders: OrderService,
     private readonly orderEvents: OrderEvents,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   onModuleInit() {
@@ -260,9 +277,14 @@ export class BotUpdate implements OnModuleInit {
       await ctx.reply(`Xush kelibsiz, ${existing.firstName}!`, mainMenu());
       return;
     }
+    // /start RE1234FG → grab the deep-link payload as a referral code
+    const text = ((ctx.message as any)?.text ?? '') as string;
+    const parts = text.split(/\s+/);
+    const refCode = parts.length > 1 ? parts[1].trim() : null;
     this.session.set(from.id, {
       step: 'awaiting_primary_phone',
       firstName: from.first_name,
+      refCode,
     });
     await ctx.reply(
       `Salom, ${from.first_name}! Iltimos, telefon raqamingizni yuboring.`,
@@ -348,18 +370,23 @@ export class BotUpdate implements OnModuleInit {
         }
         secondary = normalized.startsWith('+') ? normalized : '+' + normalized;
       }
-      await this.clients.upsert({
+      const { client, isNew, referrer } = await this.clients.upsert({
         telegramId: from.id,
         firstName: from.first_name ?? session.firstName ?? 'User',
         phonePrimary: session.phonePrimary!,
         phoneSecondary: secondary,
+        refCodeUsed: session.refCode ?? null,
       });
-      this.session.set(from.id, { step: 'registered' });
-      await ctx.reply('✅ Ro‘yxatdan o‘tdingiz!', mainMenu());
+      this.session.set(from.id, { step: 'registered', refCode: null });
+      let welcome = '✅ Ro‘yxatdan o‘tdingiz!';
+      if (isNew && referrer && referrer.id !== client.id) {
+        welcome += `\n\n🎁 Sizni *${escapeMd(referrer.firstName)}* taklif qildi.`;
+      }
+      await ctx.reply(welcome, { parse_mode: 'Markdown', ...mainMenu() });
       return;
     }
 
-    if (text === '🚖 Taxi chaqirish') {
+    if (text === BTN.order) {
       const client = await this.clients.findByTelegramId(from.id);
       if (!client) {
         await ctx.reply('Avval /start orqali ro‘yxatdan o‘ting.');
@@ -375,13 +402,92 @@ export class BotUpdate implements OnModuleInit {
       return;
     }
 
-    if (text === '❌ Bekor qilish') {
+    if (text === BTN.cancel) {
       this.session.set(from.id, { step: 'registered' });
       await ctx.reply('Bekor qilindi.', mainMenu());
       return;
     }
 
-    if (text === '📋 Buyurtmalarim') {
+    if (text === BTN.invite) {
+      const client = await this.clients.findByTelegramId(from.id);
+      if (!client) return;
+      const me = await this.bot.telegram.getMe().catch(() => null);
+      const link = me?.username && client.refCode
+        ? `https://t.me/${me.username}?start=${client.refCode}`
+        : null;
+      const lines = [
+        '🎁 *Do‘stlaringizni taklif qiling*',
+        '',
+        'Quyidagi havolani do‘stlaringizga yuboring. Ular ro‘yxatdan o‘tganida har ikkingiz ham bonus olasiz (tez orada).',
+      ];
+      if (link) {
+        lines.push('', `🔗 \`${link}\``);
+      } else if (client.refCode) {
+        lines.push('', `🔑 Sizning kodingiz: \`${client.refCode}\``);
+      }
+      await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (text === BTN.instagram) {
+      const urls = [
+        await this.settings.get('instagram_url_1'),
+        await this.settings.get('instagram_url_2'),
+        await this.settings.get('instagram_url_3'),
+      ].filter((s) => s && s.trim());
+      if (!urls.length) {
+        await ctx.reply('Instagram sahifa hali ulanmagan. Tez orada qo‘shamiz.');
+        return;
+      }
+      const buttons = urls.map((u, i) =>
+        [Markup.button.url(`Instagram ${i + 1}`, u)],
+      );
+      await ctx.reply(
+        '📷 Bizning Instagram sahifalarimiz:',
+        Markup.inlineKeyboard(buttons),
+      );
+      return;
+    }
+
+    if (text === BTN.bonus) {
+      const client = await this.clients.findByTelegramId(from.id);
+      if (!client) return;
+      const balance = Number(client.balance ?? 0).toLocaleString('uz');
+      await ctx.reply(
+        `⭐ *Bonus dasturi (ishlab chiqilmoqda)*\n\n` +
+          `Hozirgi balansingiz: *${balance}* so‘m\n` +
+          `Tez orada do‘st taklif qilish va doimiy mijoz bonuslari ishga tushadi.`,
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    if (text === BTN.becomeDriver) {
+      await ctx.reply(
+        '🚕 *Haydovchi bo‘lish (ishlab chiqilmoqda)*\n\n' +
+          'Tez orada haydovchi sifatida ariza qoldirish imkoni shu yerda paydo bo‘ladi. ' +
+          'Hozircha admin bilan bog‘laning — “💬 Admin bilan aloqa” tugmasini bosing.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    if (text === BTN.contactAdmin) {
+      const url = (await this.settings.get('admin_contact_url')).trim();
+      if (url) {
+        await ctx.reply(
+          '💬 Admin bilan bog‘lanish:',
+          Markup.inlineKeyboard([[Markup.button.url('Adminga yozish', url)]]),
+        );
+      } else {
+        await ctx.reply(
+          '💬 Admin aloqa havolasi hali sozlanmagan. Birozdan keyin urinib ko‘ring.',
+        );
+      }
+      return;
+    }
+
+    if (text === BTN.myOrders) {
       const client = await this.clients.findByTelegramId(from.id);
       if (!client) return;
       const orders = await this.clients.ordersFor(client.id);
@@ -401,14 +507,23 @@ export class BotUpdate implements OnModuleInit {
       return;
     }
 
-    if (text === '⚙️ Sozlamalar') {
+    if (text === BTN.settings) {
       const client = await this.clients.findByTelegramId(from.id);
       if (!client) return;
-      await ctx.reply(
-        `Sozlamalar:\nIsm: ${client.firstName}\nTelefon: ${client.phonePrimary}${
-          client.phoneSecondary ? '\nQo‘shimcha: ' + client.phoneSecondary : ''
-        }`,
+      const lines = [
+        `Ism: ${client.firstName}`,
+        `Telefon: ${client.phonePrimary}`,
+      ];
+      if (client.phoneSecondary) {
+        lines.push(`Qo‘shimcha: ${client.phoneSecondary}`);
+      }
+      if (client.refCode) {
+        lines.push(`Sizning ref kodingiz: ${client.refCode}`);
+      }
+      lines.push(
+        `Bonus balans: ${Number(client.balance ?? 0).toLocaleString('uz')} so‘m`,
       );
+      await ctx.reply(lines.join('\n'));
       return;
     }
   }
