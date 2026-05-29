@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Users } from 'lucide-react';
 import { Shell } from '@/components/Shell';
+import { ClientAvatar } from '@/components/ClientAvatar';
 import { api } from '@/lib/api';
 
 interface ClientRow {
@@ -10,6 +11,7 @@ interface ClientRow {
   first_name: string;
   phone_primary: string;
   phone_secondary: string | null;
+  avatar_url: string | null;
   orders_count: string;
   last_order_at: string | null;
   total_spent: string;
@@ -70,9 +72,11 @@ export default function ClientsPage() {
         {filtered.map((c) => (
           <div key={c.id} className="card p-4">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gold/15 text-gold-deep flex items-center justify-center font-bold shrink-0">
-                {c.first_name?.[0]?.toUpperCase() ?? '?'}
-              </div>
+              <ClientAvatar
+                firstName={c.first_name}
+                avatarUrl={c.avatar_url}
+                size={40}
+              />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold truncate">{c.first_name}</p>
                 <p className="text-xs font-mono text-neutral-500">
@@ -145,9 +149,11 @@ export default function ClientsPage() {
               <tr key={c.id} className="hover:bg-neutral-50 transition-colors">
                 <td className="td">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gold/15 text-gold-deep flex items-center justify-center font-bold text-sm">
-                      {c.first_name?.[0]?.toUpperCase() ?? '?'}
-                    </div>
+                    <ClientAvatar
+                      firstName={c.first_name}
+                      avatarUrl={c.avatar_url}
+                      size={36}
+                    />
                     <span className="font-semibold">{c.first_name}</span>
                   </div>
                 </td>

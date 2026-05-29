@@ -19,6 +19,11 @@ export class ClientService {
     return this.clients.findOne({ where: { id } });
   }
 
+  /** Idempotent: silently no-ops if the URL is the same as what's stored. */
+  async updateAvatarUrl(id: string, url: string | null): Promise<void> {
+    await this.clients.update(id, { avatarUrl: url });
+  }
+
   async upsert(params: {
     telegramId: string | number;
     firstName: string;
