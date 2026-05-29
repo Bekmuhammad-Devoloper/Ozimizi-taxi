@@ -444,12 +444,15 @@ export class OrderService {
       .createQueryBuilder('o')
       .leftJoinAndSelect('o.driver', 'd')
       .leftJoinAndSelect('o.client', 'c')
-      .orderBy('o.created_at', 'DESC')
+      // TypeORM skip()/take() with joins rewrites the query and resolves
+      // ORDER BY columns through entity metadata — must reference the
+      // property name (createdAt), not the snake_case DB column.
+      .orderBy('o.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
-    if (filter.from) qb.andWhere('o.created_at >= :from', { from: filter.from });
-    if (filter.to) qb.andWhere('o.created_at <= :to', { to: filter.to });
+    if (filter.from) qb.andWhere('o.createdAt >= :from', { from: filter.from });
+    if (filter.to) qb.andWhere('o.createdAt <= :to', { to: filter.to });
     if (filter.status) {
       const statuses = Array.isArray(filter.status)
         ? filter.status
