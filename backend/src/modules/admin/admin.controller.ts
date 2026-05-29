@@ -117,6 +117,16 @@ export class AdminController {
     return this.drivers.reject(id);
   }
 
+  @Post('drivers/:id/block')
+  blockDriver(@Param('id') id: string) {
+    return this.drivers.setActive(id, false);
+  }
+
+  @Post('drivers/:id/unblock')
+  unblockDriver(@Param('id') id: string) {
+    return this.drivers.setActive(id, true);
+  }
+
   @Post('drivers/:id/balance')
   adjustBalance(@Param('id') id: string, @Body() dto: AdjustBalanceDto) {
     return this.drivers.adjustBalance(id, dto.amount, dto.note);

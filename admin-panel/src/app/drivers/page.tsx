@@ -1,9 +1,19 @@
 'use client';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Wallet, Eye, Check, X } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Wallet,
+  Eye,
+  Check,
+  X,
+  Ban,
+  ShieldCheck,
+} from 'lucide-react';
 import Link from 'next/link';
 import { Shell } from '@/components/Shell';
+import { DriverAvatar } from '@/components/DriverAvatar';
 import { api } from '@/lib/api';
 
 interface DriverRow {
@@ -14,6 +24,7 @@ interface DriverRow {
   isOnline: boolean;
   isActive: boolean;
   isApproved: boolean;
+  avatarUrl: string | null;
   balance: string;
   createdAt: string;
 }
@@ -46,6 +57,18 @@ export default function DriversPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
   });
 
+  const block = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/drivers/${id}/block`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+  });
+
+  const unblock = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/drivers/${id}/unblock`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+  });
+
   return (
     <Shell
       title="Haydovchilar"
@@ -69,15 +92,27 @@ export default function DriversPage() {
           </p>
         )}
         {data?.map((d) => (
-          <div key={d.id} className="card p-4">
+          <div
+            key={d.id}
+            className={
+              'card p-4 ' + (!d.isActive ? 'opacity-60 grayscale' : '')
+            }
+          >
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-gold/15 text-gold-deep flex items-center justify-center font-bold shrink-0">
-                {initials(d.fullName)}
-              </div>
+              <DriverAvatar
+                fullName={d.fullName}
+                avatarUrl={d.avatarUrl}
+                size={40}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="font-semibold truncate">{d.fullName}</p>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {!d.isActive && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200">
+                        <Ban size={10} /> Bloklangan
+                      </span>
+                    )}
                     {!d.isApproved && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
                         Tasdiq kerak
@@ -155,15 +190,37 @@ export default function DriversPage() {
                 <button
                   onClick={() => setAdjusting(d)}
                   className="w-9 h-9 rounded-lg flex items-center justify-center bg-green-50 text-green-700"
+                  title="Balansga ta'sir"
                 >
                   <Wallet size={16} />
                 </button>
+                {d.isActive ? (
+                  <button
+                    onClick={() => {
+                      if (confirm(`${d.fullName} bloklansinmi?`))
+                        block.mutate(d.id);
+                    }}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 text-red-600"
+                    title="Bloklash"
+                  >
+                    <Ban size={16} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => unblock.mutate(d.id)}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700"
+                    title="Blokdan chiqarish"
+                  >
+                    <ShieldCheck size={16} />
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (confirm(`${d.fullName} o'chirilsinmi?`))
                       remove.mutate(d.id);
                   }}
                   className="w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 text-red-600"
+                  title="O'chirish"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -207,12 +264,20 @@ export default function DriversPage() {
               </tr>
             )}
             {data?.map((d) => (
-              <tr key={d.id} className="hover:bg-neutral-50 transition-colors">
+              <tr
+                key={d.id}
+                className={
+                  'hover:bg-neutral-50 transition-colors ' +
+                  (!d.isActive ? 'opacity-60' : '')
+                }
+              >
                 <td className="td">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gold/15 text-gold-deep flex items-center justify-center font-bold text-sm">
-                      {initials(d.fullName)}
-                    </div>
+                    <DriverAvatar
+                      fullName={d.fullName}
+                      avatarUrl={d.avatarUrl}
+                      size={36}
+                    />
                     <span className="font-semibold">{d.fullName}</span>
                   </div>
                 </td>
@@ -241,6 +306,11 @@ export default function DriversPage() {
                     {!d.isApproved && (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 border border-orange-200">
                         Tasdiq kerak
+                      </span>
+                    )}
+                    {!d.isActive && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200">
+                        <Ban size={11} /> Bloklangan
                       </span>
                     )}
                   </div>
@@ -296,6 +366,26 @@ export default function DriversPage() {
                     >
                       <Wallet size={16} />
                     </button>
+                    {d.isActive ? (
+                      <button
+                        onClick={() => {
+                          if (confirm(`${d.fullName} bloklansinmi?`))
+                            block.mutate(d.id);
+                        }}
+                        title="Bloklash"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-600"
+                      >
+                        <Ban size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => unblock.mutate(d.id)}
+                        title="Blokdan chiqarish"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-emerald-50 text-emerald-700"
+                      >
+                        <ShieldCheck size={16} />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (confirm(`${d.fullName} o'chirilsinmi?`))
@@ -325,15 +415,6 @@ export default function DriversPage() {
   );
 }
 
-function initials(name: string) {
-  return (name ?? '?')
-    .split(' ')
-    .map((s) => s[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
 
 function CreateDriverModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();

@@ -229,6 +229,20 @@ export class DriverService {
     return this.repo.save(driver);
   }
 
+  /**
+   * Reversible account block. Blocked drivers can't log in (AuthService
+   * checks isActive) and are forced offline immediately. Use softDelete()
+   * for permanent removal.
+   */
+  async setActive(id: string, active: boolean): Promise<Driver> {
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (driver.isActive === active) return driver;
+    driver.isActive = active;
+    if (!active) driver.isOnline = false;
+    return this.repo.save(driver);
+  }
+
   async adjustBalance(id: string, amount: number, note?: string) {
     const driver = await this.repo.findOne({ where: { id } });
     if (!driver) throw new NotFoundException('Driver not found');
