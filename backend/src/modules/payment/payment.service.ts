@@ -245,7 +245,9 @@ export class PaymentService {
       .andWhere(
         '(r.requested_by_driver IS NOT NULL OR r.requested_by_client IS NOT NULL)',
       )
-      .orderBy('r.created_at', 'DESC')
+      // TypeORM skip/take with joins resolves ORDER BY via entity
+      // metadata — use the camelCase property, not the snake_case column.
+      .orderBy('r.createdAt', 'DESC')
       .take(limit)
       .getMany();
   }

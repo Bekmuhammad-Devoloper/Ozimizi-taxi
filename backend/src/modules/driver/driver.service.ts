@@ -162,17 +162,26 @@ export class DriverService {
     if (email) {
       const appUrl =
         this.config.get<string>('DRIVER_APP_URL') ?? 'http://localhost:3002';
-      await this.mailer.send({
-        to: email,
-        subject: 'OZIMIZNI TAXI — Haydovchi hisobi yaratildi',
-        text:
-          `Salom, ${saved.fullName}!\n\n` +
-          `Sizning haydovchi hisobingiz yaratildi.\n\n` +
-          `Telefon: ${phone}\n` +
-          `Parol: ${dto.password}\n\n` +
-          `Ilovaga kirish: ${appUrl}/login\n\n` +
-          `Xavfsizlik uchun birinchi kirishdan keyin parolingizni o‘zgartirishni tavsiya etamiz.`,
-      });
+      // Fire-and-forget — an SMTP outage must NOT block driver creation
+      // (otherwise admin retries, hits the unique-phone error, gives up).
+      // The driver still gets the password back in the API response, so
+      // admin can deliver it manually.
+      void this.mailer
+        .send({
+          to: email,
+          subject: 'OZIMIZNI TAXI — Haydovchi hisobi yaratildi',
+          text:
+            `Salom, ${saved.fullName}!\n\n` +
+            `Sizning haydovchi hisobingiz yaratildi.\n\n` +
+            `Telefon: ${phone}\n` +
+            `Parol: ${dto.password}\n\n` +
+            `Ilovaga kirish: ${appUrl}/login\n\n` +
+            `Xavfsizlik uchun birinchi kirishdan keyin parolingizni o‘zgartirishni tavsiya etamiz.`,
+        })
+        .catch(() => {
+          // MailerService already logs the failure; swallow here so the
+          // caller's request completes successfully.
+        });
     }
     return { driver: saved, password: dto.password };
   }

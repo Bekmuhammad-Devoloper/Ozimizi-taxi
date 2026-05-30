@@ -60,10 +60,17 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     this.bot = new Telegraf(token);
     this.registerHandlers(this.bot);
     this.subscribeToPaymentEvents();
-    this.bot
-      .launch()
-      .then(() => this.logger.log('Wallet bot launched'))
-      .catch((e) => this.logger.error('Wallet bot launch failed', e));
+    // dropPendingUpdates clears the queue on startup so a long downtime
+    // (e.g. previous polling instance holding the offset) doesn't replay
+    // hundreds of /start messages. launch() returns a long-running promise
+    // that only resolves on bot.stop(); attach a real error logger.
+    this.bot.launch({ dropPendingUpdates: true }).catch((e: any) => {
+      this.logger.error(
+        `Wallet bot launch failed: ${e?.message ?? e}`,
+        e?.stack,
+      );
+    });
+    this.logger.log('Wallet bot launching (long-poll)…');
   }
 
   async onModuleDestroy() {

@@ -38,10 +38,13 @@ export class FeedbackBotService implements OnModuleInit, OnModuleDestroy {
     }
     this.bot = new Telegraf(token);
     this.registerHandlers(this.bot);
-    this.bot
-      .launch()
-      .then(() => this.logger.log('Feedback bot launched'))
-      .catch((e) => this.logger.error('Feedback bot launch failed', e));
+    this.bot.launch({ dropPendingUpdates: true }).catch((e: any) => {
+      this.logger.error(
+        `Feedback bot launch failed: ${e?.message ?? e}`,
+        e?.stack,
+      );
+    });
+    this.logger.log('Feedback bot launching (long-poll)…');
   }
 
   async onModuleDestroy() {
