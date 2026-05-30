@@ -146,6 +146,119 @@ export class BalanceService {
     return admin[0]?.balance ?? '0.00';
   }
 
+  /**
+   * Move funds between the treasury and a coordinator's purse.
+   * Positive amount = treasury → coord (allocation).
+   * Negative amount = coord → treasury (claw-back).
+   * Coordinator can then transfer from their purse without further
+   * admin approval.
+   */
+  async allocateToCoordinator(params: {
+    coordId: string;
+    amount: number;
+    note?: string | null;
+  }): Promise<{ coordBalance: string; treasuryBalance: string }> {
+    if (!Number.isFinite(params.amount) || params.amount === 0) {
+      throw new BadRequestException('Summa noto‘g‘ri');
+    }
+    return this.ds.transaction(async (em) => {
+      const treasury = await this.lockTreasury(em);
+      const coord = await this.lockAdmin(em, params.coordId);
+      if (coord.id === treasury.id) {
+        throw new BadRequestException('Treasury admin allocate sub-account emas');
+      }
+      if ((coord.role ?? 'admin') !== 'coordinator') {
+        throw new BadRequestException('Faqat koordinatorga ajratish mumkin');
+      }
+      const nextTreasury = Number(treasury.balance) - params.amount;
+      const nextCoord = Number(coord.balance) + params.amount;
+      this.assertNonNegative(nextTreasury, 'xazina');
+      this.assertNonNegative(nextCoord, 'koordinator');
+      treasury.balance = fmt(nextTreasury);
+      coord.balance = fmt(nextCoord);
+      await em.save(treasury);
+      await em.save(coord);
+      return {
+        coordBalance: coord.balance,
+        treasuryBalance: treasury.balance,
+      };
+    });
+  }
+
+  /**
+   * Direct transfer from coordinator's purse to a driver or client.
+   * Atomic and irrevocable — no admin approval step. The driver tx is
+   * journaled in balance_transactions; the coord side is reflected
+   * only in admin.balance (no separate ledger table yet).
+   */
+  async adjustFromCoordinator(params: {
+    coordId: string;
+    driverId?: string;
+    clientId?: string;
+    amount: number;
+    type: BalanceTxType;
+    note?: string | null;
+  }): Promise<{ targetBalance: string; coordBalance: string }> {
+    if (!Number.isFinite(params.amount) || params.amount === 0) {
+      throw new BadRequestException('Summa noto‘g‘ri');
+    }
+    if (!params.driverId && !params.clientId) {
+      throw new BadRequestException('Haydovchi yoki klient tanlang');
+    }
+    if (params.driverId && params.clientId) {
+      throw new BadRequestException(
+        'Bir vaqtning o‘zida haydovchi va klient tanlanmasin',
+      );
+    }
+    return this.ds.transaction(async (em) => {
+      const coord = await this.lockAdmin(em, params.coordId);
+      if ((coord.role ?? 'admin') !== 'coordinator') {
+        throw new BadRequestException('Faqat koordinator o‘tkazma qila oladi');
+      }
+      // Topup = coord-balance debited, target credited.
+      // Withdraw = target debited, coord credited (returns to purse).
+      const sign = params.amount >= 0 ? 1 : -1;
+      const absAmt = Math.abs(params.amount);
+      const nextCoord =
+        Number(coord.balance) - sign * absAmt; // positive transfer leaves purse
+      this.assertNonNegative(nextCoord, 'koordinator hamyoni');
+
+      let targetBalance = '';
+      if (params.driverId) {
+        const driver = await this.lockDriver(em, params.driverId);
+        const nextDriver = Number(driver.balance) + sign * absAmt;
+        this.assertNonNegative(nextDriver, 'haydovchi');
+        driver.balance = fmt(nextDriver);
+        await em.save(driver);
+        await em.save(
+          em.getRepository(BalanceTransaction).create({
+            driverId: driver.id,
+            amount: fmt(sign * absAmt),
+            type: params.type,
+            note: params.note ?? `Coordinator ${coord.username}`,
+          }),
+        );
+        targetBalance = driver.balance;
+      } else if (params.clientId) {
+        const client = await this.lockClient(em, params.clientId);
+        const nextClient = Number(client.balance) + sign * absAmt;
+        this.assertNonNegative(nextClient, 'klient');
+        client.balance = fmt(nextClient);
+        await em.save(client);
+        targetBalance = client.balance;
+      }
+
+      coord.balance = fmt(nextCoord);
+      await em.save(coord);
+      return { targetBalance, coordBalance: coord.balance };
+    });
+  }
+
+  async coordinatorBalance(coordId: string): Promise<string> {
+    const a = await this.admins.findOne({ where: { id: coordId } });
+    return a?.balance ?? '0.00';
+  }
+
   // --- internals -----------------------------------------------------------
 
   private async lockDriver(em: EntityManager, id: string): Promise<Driver> {
@@ -168,6 +281,18 @@ export class BalanceService {
       .getOne();
     if (!client) throw new BadRequestException('Client not found');
     return client;
+  }
+
+  /** Pessimistic-write lock on any admin row (treasury or coordinator). */
+  private async lockAdmin(em: EntityManager, id: string): Promise<Admin> {
+    const admin = await em
+      .getRepository(Admin)
+      .createQueryBuilder('a')
+      .setLock('pessimistic_write')
+      .where('a.id = :id', { id })
+      .getOne();
+    if (!admin) throw new BadRequestException('Admin not found');
+    return admin;
   }
 
   /**

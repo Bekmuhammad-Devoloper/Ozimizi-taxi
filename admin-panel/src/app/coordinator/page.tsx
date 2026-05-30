@@ -57,6 +57,17 @@ export default function CoordinatorPage() {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
+  const { data: me } = useQuery({
+    queryKey: ['coordinator', 'me'],
+    queryFn: async () =>
+      (
+        await api.get<{ id: string; username: string; balance: string }>(
+          '/coordinator/me',
+        )
+      ).data,
+    refetchInterval: 15_000,
+  });
+
   const { data: drivers } = useQuery({
     queryKey: ['coordinator', 'drivers'],
     queryFn: async () =>
@@ -115,14 +126,17 @@ export default function CoordinatorPage() {
       const body: any = { amount: signed, note };
       if (target === 'driver') body.driverId = selectedId;
       else body.clientId = selectedId;
-      return (await api.post('/coordinator/requests', body)).data;
+      // Direct transfer from coordinator's purse — no admin approval.
+      // 4xx if purse balance is insufficient.
+      return (await api.post('/coordinator/transfer', body)).data;
     },
     onSuccess: () => {
-      setOk('So‘rov yuborildi. Admin tasdig‘ini kuting.');
+      setOk('✅ O‘tkazma bajarildi.');
       setAmount('');
       setNote('');
       setSelectedId('');
       setQuery('');
+      qc.invalidateQueries({ queryKey: ['coordinator', 'me'] });
       qc.invalidateQueries({ queryKey: ['coordinator', 'requests'] });
       setTimeout(() => setOk(null), 3500);
     },
@@ -196,30 +210,31 @@ export default function CoordinatorPage() {
   return (
     <Shell
       title="To‘lov yuborish"
-      subtitle="Haydovchiga pul tashlash yoki yechish — admin tasdig‘i bilan amalga oshadi"
+      subtitle="O‘zingizga ajratilgan hamyondan haydovchi yoki klientga to‘g‘ridan-to‘g‘ri o‘tkazish"
     >
       {/* KPI ROW */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <Kpi
-          label="Kutilmoqda"
-          value={String(kpi.pending)}
-          icon={<Clock size={18} />}
-          accent={kpi.pending > 0 ? 'gold' : undefined}
+          label="Mening hamyonim"
+          value={`${Number(me?.balance ?? 0).toLocaleString('uz')} so‘m`}
+          icon={<Wallet size={18} />}
+          accent="gold"
         />
         <Kpi
-          label="Jami so‘rov"
+          label="Jami o‘tkazma"
           value={String(kpi.total)}
           icon={<Inbox size={18} />}
         />
         <Kpi
-          label="Rad etilgan"
-          value={String(kpi.rejected)}
-          icon={<XIcon size={18} />}
+          label="O‘tkazilgan hajm"
+          value={`${kpi.approvedAmount.toLocaleString('uz')} so‘m`}
+          icon={<ArrowUpRight size={18} />}
         />
         <Kpi
-          label="Tasdiqlangan hajm"
-          value={`${kpi.approvedAmount.toLocaleString('uz')} so‘m`}
-          icon={<Wallet size={18} />}
+          label="Klient/haydovchi so‘rovlari"
+          value={String(pending?.length ?? 0)}
+          icon={<Clock size={18} />}
+          accent={(pending?.length ?? 0) > 0 ? 'gold' : undefined}
         />
       </section>
 
@@ -383,13 +398,13 @@ export default function CoordinatorPage() {
             className="w-full h-11 bg-ink text-gold rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <Send size={16} />{' '}
-            {submit.isPending ? 'Yuborilmoqda…' : 'So‘rovni yuborish'}
+            {submit.isPending ? 'Yuborilmoqda…' : 'O‘tkazish'}
           </button>
         </div>
 
         {/* History */}
         <div className="card p-5 lg:col-span-2">
-          <h3 className="font-bold mb-3">Mening so‘rovlarim</h3>
+          <h3 className="font-bold mb-3">Mening o‘tkazmalarim</h3>
           {reqLoading ? (
             <p className="text-sm text-neutral-500">Yuklanmoqda…</p>
           ) : !requests?.length ? (

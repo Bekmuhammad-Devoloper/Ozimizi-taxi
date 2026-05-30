@@ -227,8 +227,26 @@ export class AdminController {
       id: a.id,
       username: a.username,
       role: a.role,
+      balance: a.balance,
       createdAt: a.createdAt,
     }));
+  }
+
+  /**
+   * Move funds between treasury and a coordinator's purse.
+   * Positive amount = give the coordinator money to spend.
+   * Negative amount = pull funds back into treasury.
+   */
+  @Post('coordinators/:id/allocate')
+  async allocateToCoordinator(
+    @Param('id') id: string,
+    @Body() body: { amount: number; note?: string },
+  ) {
+    return this.balance.allocateToCoordinator({
+      coordId: id,
+      amount: Number(body.amount),
+      note: body.note ?? null,
+    });
   }
 
   @Post('coordinators')

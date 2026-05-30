@@ -333,6 +333,35 @@ export class PaymentService {
     }));
   }
 
+  /**
+   * Audit row for a direct coordinator transfer. The money is already
+   * moved by BalanceService.adjustFromCoordinator — this just makes the
+   * action visible in the coordinator's own history (listOwn) and in
+   * the admin payment-requests log.
+   */
+  async recordCoordTransfer(params: {
+    coordId: string;
+    driverId?: string | null;
+    clientId?: string | null;
+    amount: number;
+    note?: string | null;
+  }): Promise<PaymentRequest> {
+    const now = new Date();
+    const row = this.requests.create({
+      driverId: params.driverId ?? null,
+      clientId: params.clientId ?? null,
+      amount: params.amount.toFixed(2),
+      status: PaymentRequestStatus.APPROVED,
+      requestedBy: params.coordId,
+      requestedByDriver: null,
+      requestedByClient: null,
+      decidedBy: params.coordId,
+      decidedAt: now,
+      note: params.note ?? null,
+    });
+    return this.requests.save(row);
+  }
+
   /** Client listing for the coordinator — strictly minimal fields. */
   async listClientsForCoordinator() {
     const rows = await this.clients.find({
