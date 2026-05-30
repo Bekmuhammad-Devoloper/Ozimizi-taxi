@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 import {
   Camera,
   Car,
@@ -211,9 +212,21 @@ function Inner() {
           >
             {fmt(todayEarnings)} so‘m
           </InfoRow>
-          <InfoRow icon={<CreditCard size={16} />} label="Balans">
-            {fmt(driver?.balance ?? 0)} so‘m
-          </InfoRow>
+          <li>
+            <Link
+              href="/balance"
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 transition-colors"
+            >
+              <span className="text-neutral-400">
+                <CreditCard size={16} />
+              </span>
+              <span className="text-xs text-neutral-500 flex-1">Balans</span>
+              <span className="text-sm font-medium text-right">
+                {fmt(driver?.balance ?? 0)} so‘m
+              </span>
+              <ChevronRight size={14} className="text-neutral-400" />
+            </Link>
+          </li>
         </ul>
       </section>
 
