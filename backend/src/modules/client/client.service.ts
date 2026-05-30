@@ -19,11 +19,6 @@ export class ClientService {
     return this.clients.findOne({ where: { id } });
   }
 
-  /** Idempotent: silently no-ops if the URL is the same as what's stored. */
-  async updateAvatarUrl(id: string, url: string | null): Promise<void> {
-    await this.clients.update(id, { avatarUrl: url });
-  }
-
   async upsert(params: {
     telegramId: string | number;
     firstName: string;
@@ -101,5 +96,23 @@ export class ClientService {
       where: { clientId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async setAvatar(clientId: string, url: string | null) {
+    await this.clients.update(clientId, {
+      avatarUrl: url,
+      avatarFetchedAt: new Date(),
+    });
+  }
+
+  /**
+   * Avatar TTL: re-download when older than 7 days. Returns true if a
+   * fresh fetch should be attempted.
+   */
+  shouldRefreshAvatar(client: { avatarUrl: string | null; avatarFetchedAt: Date | null }): boolean {
+    if (!client.avatarUrl) return true;
+    if (!client.avatarFetchedAt) return true;
+    const ageMs = Date.now() - new Date(client.avatarFetchedAt).getTime();
+    return ageMs > 7 * 24 * 60 * 60 * 1000;
   }
 }

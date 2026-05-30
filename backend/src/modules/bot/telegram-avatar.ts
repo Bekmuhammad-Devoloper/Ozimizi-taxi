@@ -1,49 +1,60 @@
 import { Logger } from '@nestjs/common';
 import * as fs from 'fs';
-import * as path from 'path';
-import type { Telegram } from 'telegraf';
+import { join } from 'path';
+import { Context, Telegraf } from 'telegraf';
 
-const logger = new Logger('TelegramAvatar');
+const log = new Logger('TelegramAvatar');
+
+export interface AvatarSink {
+  setAvatar(clientId: string, url: string | null): Promise<void>;
+}
 
 /**
- * Fetch the user's current Telegram profile photo and persist it under
- * `<cwd>/uploads/clients/<userId>.jpg`. Returns the public URL path
- * (`/uploads/clients/...`) suitable for storing on the Client row, or
- * null if the user has no photo / the download fails.
- *
- * Designed for fire-and-forget use after /start: callers should `void`
- * the promise and never block the bot reply on it.
+ * Download the user's current Telegram profile photo and store it under
+ * /uploads/clients/<clientId>.jpg. Idempotent: callers should gate on the
+ * sink's TTL check before calling. Failures are swallowed (logged) so the
+ * /start flow never breaks because of a transient Telegram outage or a
+ * user with privacy-locked photos.
  */
-export async function fetchAndStoreTelegramAvatar(
-  telegram: Telegram,
-  userId: number,
+export async function cacheTelegramAvatar(
+  bot: Telegraf<Context> | Telegraf,
+  telegramUserId: number | string,
+  clientId: string,
+  sink: AvatarSink,
 ): Promise<string | null> {
   try {
-    const photos = await telegram.getUserProfilePhotos(userId, 0, 1);
-    if (!photos.total_count) return null;
-    const sizes = photos.photos[0];
-    if (!sizes?.length) return null;
-    // PhotoSize array is ascending by resolution; the last item is usually
-    // 640x640 — plenty for an avatar without wasting disk.
-    const photo = sizes[sizes.length - 1];
+    const uid = Number(telegramUserId);
+    if (!Number.isFinite(uid)) return null;
 
-    const link = await telegram.getFileLink(photo.file_id);
-    const res = await fetch(link.toString());
+    const photos = await bot.telegram.getUserProfilePhotos(uid, 0, 1);
+    if (!photos.total_count || !photos.photos[0]?.length) {
+      // User has no photo or has privacy locked.
+      return null;
+    }
+    // Each photo comes in multiple sizes — the last entry is the largest.
+    const sizes = photos.photos[0];
+    const best = sizes[sizes.length - 1];
+
+    const link = await bot.telegram.getFileLink(best.file_id);
+    const url = typeof link === 'string' ? link : link.toString();
+
+    const res = await fetch(url);
     if (!res.ok) {
-      logger.warn(`avatar download HTTP ${res.status} for ${userId}`);
+      log.warn(`getFileLink fetch ${res.status} for client ${clientId}`);
       return null;
     }
     const buf = Buffer.from(await res.arrayBuffer());
 
-    const dir = path.join(process.cwd(), 'uploads', 'clients');
-    await fs.promises.mkdir(dir, { recursive: true });
-    const filename = `${userId}.jpg`;
-    await fs.promises.writeFile(path.join(dir, filename), buf);
-    return `/uploads/clients/${filename}`;
-  } catch (e) {
-    logger.warn(
-      `avatar fetch failed for ${userId}: ${(e as Error).message}`,
-    );
+    const dir = join(process.cwd(), 'uploads', 'clients');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = `${clientId}.jpg`;
+    fs.writeFileSync(join(dir, filename), buf);
+
+    const publicUrl = `/uploads/clients/${filename}`;
+    await sink.setAvatar(clientId, publicUrl);
+    return publicUrl;
+  } catch (e: any) {
+    log.warn(`cacheTelegramAvatar failed for ${clientId}: ${e?.message ?? e}`);
     return null;
   }
 }

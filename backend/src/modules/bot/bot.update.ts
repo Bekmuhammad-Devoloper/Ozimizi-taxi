@@ -17,7 +17,7 @@ import { OrderService } from '../order/order.service';
 import { SessionStore } from './bot.scenes';
 import { OrderEvents, DriverSummary } from '../order/order.events';
 import { SettingsService } from '../settings/settings.service';
-import { fetchAndStoreTelegramAvatar } from './telegram-avatar';
+import { cacheTelegramAvatar } from './telegram-avatar';
 
 const PHONE_REGEX = /^\+?\d{9,15}$/;
 
@@ -77,21 +77,6 @@ const locationRequestKb = () =>
 export class BotUpdate implements OnModuleInit {
   private readonly logger = new Logger(BotUpdate.name);
   private readonly session = new SessionStore();
-
-  /**
-   * Fire-and-forget Telegram avatar refresh. Caller voids the promise so
-   * the bot reply isn't blocked on network IO.
-   */
-  private async refreshAvatar(
-    ctx: Context,
-    clientId: string,
-    telegramId: number,
-  ) {
-    const url = await fetchAndStoreTelegramAvatar(ctx.telegram, telegramId);
-    if (url) {
-      await this.clients.updateAvatarUrl(clientId, url);
-    }
-  }
 
   constructor(
     @InjectBot() private readonly bot: Telegraf<Context>,
@@ -290,11 +275,11 @@ export class BotUpdate implements OnModuleInit {
     const existing = await this.clients.findByTelegramId(from.id);
     if (existing) {
       this.session.set(from.id, { step: 'registered' });
-      await ctx.reply(`Xush kelibsiz, ${existing.firstName}!`, mainMenu());
-      // Lazy avatar refresh — only when we don't have one cached.
-      if (!existing.avatarUrl) {
-        void this.refreshAvatar(ctx, existing.id, from.id);
+      // Refresh cached avatar in the background when older than TTL.
+      if (this.clients.shouldRefreshAvatar(existing)) {
+        void cacheTelegramAvatar(this.bot, from.id, existing.id, this.clients);
       }
+      await ctx.reply(`Xush kelibsiz, ${existing.firstName}!`, mainMenu());
       return;
     }
     // /start RE1234FG → grab the deep-link payload as a referral code
@@ -398,15 +383,16 @@ export class BotUpdate implements OnModuleInit {
         refCodeUsed: session.refCode ?? null,
       });
       this.session.set(from.id, { step: 'registered', refCode: null });
+      // Cache the Telegram profile photo in the background — never block
+      // the registration reply on it.
+      if (this.clients.shouldRefreshAvatar(client)) {
+        void cacheTelegramAvatar(this.bot, from.id, client.id, this.clients);
+      }
       let welcome = '✅ Ro‘yxatdan o‘tdingiz!';
       if (isNew && referrer && referrer.id !== client.id) {
         welcome += `\n\n🎁 Sizni *${escapeMd(referrer.firstName)}* taklif qildi.`;
       }
       await ctx.reply(welcome, { parse_mode: 'Markdown', ...mainMenu() });
-      // First-time registrations almost never have a cached avatar yet.
-      if (!client.avatarUrl) {
-        void this.refreshAvatar(ctx, client.id, from.id);
-      }
       return;
     }
 

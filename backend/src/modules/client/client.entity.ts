@@ -45,10 +45,12 @@ export class Client {
   @JoinColumn({ name: 'referred_by_id' })
   referredBy: Client | null;
 
-  // Cached Telegram profile photo. Path under /uploads/clients/<telegramId>.jpg.
-  // Refreshed lazily by BotUpdate when missing.
-  @Column({ name: 'avatar_url', type: 'varchar', length: 500, nullable: true })
+  // Cached Telegram profile photo, downloaded by the bot on /start.
+  @Column({ name: 'avatar_url', type: 'text', nullable: true })
   avatarUrl: string | null;
+
+  @Column({ name: 'avatar_fetched_at', type: 'timestamptz', nullable: true })
+  avatarFetchedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

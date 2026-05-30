@@ -73,7 +73,7 @@ export default function ClientsPage() {
           <div key={c.id} className="card p-4">
             <div className="flex items-center gap-3 mb-3">
               <ClientAvatar
-                firstName={c.first_name}
+                name={c.first_name}
                 avatarUrl={c.avatar_url}
                 size={40}
               />
@@ -150,7 +150,7 @@ export default function ClientsPage() {
                 <td className="td">
                   <div className="flex items-center gap-3">
                     <ClientAvatar
-                      firstName={c.first_name}
+                      name={c.first_name}
                       avatarUrl={c.avatar_url}
                       size={36}
                     />

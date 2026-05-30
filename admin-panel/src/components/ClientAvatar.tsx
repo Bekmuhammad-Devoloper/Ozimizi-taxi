@@ -3,7 +3,7 @@ import { User } from 'lucide-react';
 import { useState } from 'react';
 
 interface Props {
-  firstName: string;
+  name: string;
   avatarUrl?: string | null;
   size?: number;
   className?: string;
@@ -18,11 +18,11 @@ function resolveUrl(raw: string): string {
 }
 
 /**
- * Client avatar — cached Telegram profile photo when available,
- * otherwise a User icon. Falls back to the icon on image load error.
+ * Client avatar — Telegram profile photo (cached locally by the bot) when
+ * available, otherwise a User icon. Falls back to the icon on load error.
  */
 export function ClientAvatar({
-  firstName,
+  name,
   avatarUrl,
   size = 36,
   className = '',
@@ -35,8 +35,8 @@ export function ClientAvatar({
     return (
       <img
         src={resolveUrl(avatarUrl!)}
-        alt={firstName}
-        title={firstName}
+        alt={name}
+        title={name}
         onError={() => setBroken(true)}
         style={dim}
         className={
@@ -48,7 +48,7 @@ export function ClientAvatar({
   return (
     <span
       style={dim}
-      title={firstName}
+      title={name}
       className={
         'rounded-full bg-gold/15 text-gold-deep flex items-center justify-center shrink-0 ' +
         className
