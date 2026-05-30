@@ -11,6 +11,8 @@ import {
   Search,
   Inbox,
   Wallet,
+  Car as CarIcon,
+  User as UserIcon,
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
@@ -21,22 +23,33 @@ interface DriverLite {
   phone: string;
 }
 
+interface ClientLite {
+  id: string;
+  firstName: string;
+  phonePrimary: string;
+}
+
 interface RequestRow {
   id: string;
-  driverId: string;
+  driverId: string | null;
+  clientId: string | null;
   amount: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   note: string | null;
   createdAt: string;
   decidedAt: string | null;
-  driver?: DriverLite;
+  driver?: DriverLite | null;
+  client?: { firstName: string; phonePrimary: string } | null;
 }
+
+type TargetType = 'driver' | 'client';
 
 export default function CoordinatorPage() {
   const qc = useQueryClient();
+  const [target, setTarget] = useState<TargetType>('driver');
   const [mode, setMode] = useState<'topup' | 'withdraw'>('topup');
-  const [driverId, setDriverId] = useState('');
-  const [driverQuery, setDriverQuery] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [query, setQuery] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -48,32 +61,44 @@ export default function CoordinatorPage() {
       (await api.get<DriverLite[]>('/coordinator/drivers')).data,
   });
 
+  const { data: clients } = useQuery({
+    queryKey: ['coordinator', 'clients'],
+    queryFn: async () =>
+      (await api.get<ClientLite[]>('/coordinator/clients')).data,
+  });
+
   const { data: requests, isLoading: reqLoading } = useQuery({
     queryKey: ['coordinator', 'requests'],
     queryFn: async () =>
       (await api.get<RequestRow[]>('/coordinator/requests')).data,
   });
 
+  const switchTarget = (t: TargetType) => {
+    setTarget(t);
+    setSelectedId('');
+    setQuery('');
+  };
+
   const submit = useMutation({
     mutationFn: async () => {
       const a = Number(amount);
-      if (!driverId) throw new Error('Haydovchini tanlang');
+      if (!selectedId)
+        throw new Error(
+          target === 'driver' ? 'Haydovchini tanlang' : 'Klientni tanlang',
+        );
       if (!Number.isFinite(a) || a <= 0) throw new Error('Summa noto‘g‘ri');
       const signed = mode === 'topup' ? a : -a;
-      return (
-        await api.post('/coordinator/requests', {
-          driverId,
-          amount: signed,
-          note,
-        })
-      ).data;
+      const body: any = { amount: signed, note };
+      if (target === 'driver') body.driverId = selectedId;
+      else body.clientId = selectedId;
+      return (await api.post('/coordinator/requests', body)).data;
     },
     onSuccess: () => {
       setOk('So‘rov yuborildi. Admin tasdig‘ini kuting.');
       setAmount('');
       setNote('');
-      setDriverId('');
-      setDriverQuery('');
+      setSelectedId('');
+      setQuery('');
       qc.invalidateQueries({ queryKey: ['coordinator', 'requests'] });
       setTimeout(() => setOk(null), 3500);
     },
@@ -83,25 +108,52 @@ export default function CoordinatorPage() {
     },
   });
 
-  // Filter driver list by typed query (name or phone) — much faster than
-  // scrolling a dropdown of 100+ drivers.
-  const filteredDrivers = useMemo(() => {
-    const q = driverQuery.trim().toLowerCase();
-    const list = drivers ?? [];
-    if (!q) return list.slice(0, 30);
-    return list
+  // Unified candidate list per target type, capped at 30 with name+phone
+  // substring filter so the picker stays fast at 100s of rows.
+  const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const digits = q.replace(/\D/g, '');
+    if (target === 'driver') {
+      const list = drivers ?? [];
+      const arr = list.map((d) => ({
+        id: d.id,
+        name: d.fullName,
+        phone: d.phone,
+      }));
+      if (!q) return arr.slice(0, 30);
+      return arr
+        .filter(
+          (x) =>
+            x.name.toLowerCase().includes(q) ||
+            (digits && x.phone.replace(/\D/g, '').includes(digits)),
+        )
+        .slice(0, 30);
+    }
+    const list = clients ?? [];
+    const arr = list.map((c) => ({
+      id: c.id,
+      name: c.firstName,
+      phone: c.phonePrimary,
+    }));
+    if (!q) return arr.slice(0, 30);
+    return arr
       .filter(
-        (d) =>
-          d.fullName.toLowerCase().includes(q) ||
-          d.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')),
+        (x) =>
+          x.name.toLowerCase().includes(q) ||
+          (digits && x.phone.replace(/\D/g, '').includes(digits)),
       )
       .slice(0, 30);
-  }, [drivers, driverQuery]);
+  }, [target, drivers, clients, query]);
 
-  const selectedDriver = useMemo(
-    () => drivers?.find((d) => d.id === driverId),
-    [drivers, driverId],
-  );
+  const selected = useMemo(() => {
+    if (!selectedId) return null;
+    if (target === 'driver') {
+      const d = drivers?.find((x) => x.id === selectedId);
+      return d ? { name: d.fullName, phone: d.phone } : null;
+    }
+    const c = clients?.find((x) => x.id === selectedId);
+    return c ? { name: c.firstName, phone: c.phonePrimary } : null;
+  }, [target, selectedId, drivers, clients]);
 
   // KPI from own request history.
   const kpi = useMemo(() => {
@@ -150,6 +202,34 @@ export default function CoordinatorPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Form */}
         <div className="card p-5 lg:col-span-1 h-fit">
+          {/* Target toggle: driver vs client */}
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => switchTarget('driver')}
+              className={
+                'flex-1 h-10 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors ' +
+                (target === 'driver'
+                  ? 'bg-ink text-gold'
+                  : 'bg-neutral-100 text-neutral-500')
+              }
+              type="button"
+            >
+              <CarIcon size={15} /> Haydovchi
+            </button>
+            <button
+              onClick={() => switchTarget('client')}
+              className={
+                'flex-1 h-10 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors ' +
+                (target === 'client'
+                  ? 'bg-ink text-gold'
+                  : 'bg-neutral-100 text-neutral-500')
+              }
+              type="button"
+            >
+              <UserIcon size={15} /> Klient
+            </button>
+          </div>
+
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => setMode('topup')}
@@ -175,21 +255,28 @@ export default function CoordinatorPage() {
             </button>
           </div>
 
-          <Field label="Haydovchi">
-            {selectedDriver ? (
+          <Field label={target === 'driver' ? 'Haydovchi' : 'Klient'}>
+            {selected ? (
               <div className="flex items-center gap-2 p-2 border border-line rounded-lg bg-neutral-50">
+                <span className="w-8 h-8 rounded-full bg-gold/15 text-gold-deep flex items-center justify-center shrink-0">
+                  {target === 'driver' ? (
+                    <CarIcon size={16} />
+                  ) : (
+                    <UserIcon size={16} />
+                  )}
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">
-                    {selectedDriver.fullName}
+                    {selected.name}
                   </p>
                   <p className="text-xs text-neutral-500 font-mono">
-                    {selectedDriver.phone}
+                    {selected.phone}
                   </p>
                 </div>
                 <button
                   onClick={() => {
-                    setDriverId('');
-                    setDriverQuery('');
+                    setSelectedId('');
+                    setQuery('');
                   }}
                   className="text-xs text-neutral-500 px-2 py-1 hover:text-red-600"
                   type="button"
@@ -205,34 +292,34 @@ export default function CoordinatorPage() {
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
                   />
                   <input
-                    value={driverQuery}
-                    onChange={(e) => setDriverQuery(e.target.value)}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
                     placeholder="Ism yoki telefon…"
                     className="input pl-9"
                   />
                 </div>
-                {(driverQuery || filteredDrivers.length > 0) && (
+                {(query || candidates.length > 0) && (
                   <ul className="mt-1 max-h-56 overflow-y-auto border border-line rounded-lg divide-y divide-line">
-                    {filteredDrivers.length === 0 ? (
+                    {candidates.length === 0 ? (
                       <li className="p-3 text-xs text-neutral-500 text-center">
                         Topilmadi
                       </li>
                     ) : (
-                      filteredDrivers.map((d) => (
-                        <li key={d.id}>
+                      candidates.map((x) => (
+                        <li key={x.id}>
                           <button
                             type="button"
                             onClick={() => {
-                              setDriverId(d.id);
-                              setDriverQuery('');
+                              setSelectedId(x.id);
+                              setQuery('');
                             }}
                             className="w-full px-3 py-2 text-left hover:bg-neutral-50 flex justify-between items-center gap-2"
                           >
                             <span className="font-medium text-sm truncate">
-                              {d.fullName}
+                              {x.name}
                             </span>
                             <span className="text-xs text-neutral-500 font-mono shrink-0">
-                              {d.phone}
+                              {x.phone}
                             </span>
                           </button>
                         </li>
@@ -292,8 +379,13 @@ export default function CoordinatorPage() {
                 >
                   <StatusIcon status={r.status} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">
-                      {r.driver?.fullName ?? '—'}
+                    <p className="font-semibold text-sm truncate flex items-center gap-1.5">
+                      {r.clientId ? (
+                        <UserIcon size={12} className="text-neutral-400" />
+                      ) : (
+                        <CarIcon size={12} className="text-neutral-400" />
+                      )}
+                      {r.driver?.fullName ?? r.client?.firstName ?? '—'}
                     </p>
                     <p className="text-xs text-neutral-500">
                       {new Date(r.createdAt).toLocaleString('uz', {

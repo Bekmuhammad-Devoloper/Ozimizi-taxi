@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Driver } from '../driver/driver.entity';
 import { Admin } from '../admin/admin.entity';
+import { Client } from '../client/client.entity';
 
 export enum PaymentRequestStatus {
   PENDING = 'PENDING',
@@ -21,13 +22,22 @@ export class PaymentRequest {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // Exactly one of driverId / clientId is set (DB CHECK constraint).
   @Index()
-  @Column({ name: 'driver_id', type: 'uuid' })
-  driverId: string;
+  @Column({ name: 'driver_id', type: 'uuid', nullable: true })
+  driverId: string | null;
 
-  @ManyToOne(() => Driver, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Driver, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'driver_id' })
-  driver: Driver;
+  driver: Driver | null;
+
+  @Index()
+  @Column({ name: 'client_id', type: 'uuid', nullable: true })
+  clientId: string | null;
+
+  @ManyToOne(() => Client, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'client_id' })
+  client: Client | null;
 
   // Positive = top-up, negative = withdrawal.
   @Column({ type: 'numeric', precision: 14, scale: 2 })

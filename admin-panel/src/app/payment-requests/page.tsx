@@ -9,13 +9,15 @@ type Status = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 interface RequestRow {
   id: string;
-  driverId: string;
+  driverId: string | null;
+  clientId: string | null;
   amount: string;
   status: Status;
   note: string | null;
   createdAt: string;
   decidedAt: string | null;
-  driver?: { fullName: string; phone: string; balance: string };
+  driver?: { fullName: string; phone: string; balance: string } | null;
+  client?: { firstName: string; phonePrimary: string; balance: string } | null;
   requester?: { username: string } | null;
   driverRequester?: { fullName: string } | null;
   decider?: { username: string } | null;
@@ -89,10 +91,20 @@ export default function PaymentRequestsPage() {
             >
               <StatusIcon status={r.status} />
               <div className="flex-1 min-w-[180px]">
-                <p className="font-semibold">
-                  {r.driver?.fullName ?? '—'}
-                  <span className="ml-2 text-xs text-neutral-500 font-normal">
-                    {r.driver?.phone}
+                <p className="font-semibold flex items-center gap-2 flex-wrap">
+                  <span
+                    className={
+                      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ' +
+                      (r.clientId
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-neutral-100 text-neutral-600')
+                    }
+                  >
+                    {r.clientId ? '👤 Klient' : '🚗 Haydovchi'}
+                  </span>
+                  {r.driver?.fullName ?? r.client?.firstName ?? '—'}
+                  <span className="text-xs text-neutral-500 font-normal font-mono">
+                    {r.driver?.phone ?? r.client?.phonePrimary}
                   </span>
                 </p>
                 <p className="text-xs text-neutral-500">

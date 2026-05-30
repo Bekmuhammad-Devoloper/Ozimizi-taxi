@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -19,8 +20,8 @@ import { Admin } from '../admin/admin.entity';
 
 /**
  * Coordinator-only API. Coordinators are a super-admin-lite role: they can
- *   - list drivers (id + name + phone — no balances, no order history)
- *   - submit top-up / withdraw requests
+ *   - list drivers and clients (id + name + phone — no balances, no order history)
+ *   - submit top-up / withdraw requests for either drivers or clients
  *   - see their own submitted requests and the admin verdict
  * They cannot see treasury balance, the 100M pool, aggregate stats, or
  * other coordinators' requests.
@@ -45,14 +46,35 @@ export class CoordinatorController {
     return this.payment.listDriversForCoordinator();
   }
 
+  @Get('clients')
+  clients() {
+    return this.payment.listClientsForCoordinator();
+  }
+
   @Post('requests')
   submit(
     @CurrentUser() user: JwtPayload,
-    @Body() body: { driverId: string; amount: number; note?: string },
+    @Body()
+    body: {
+      driverId?: string;
+      clientId?: string;
+      amount: number;
+      note?: string;
+    },
   ) {
+    if (!body.driverId && !body.clientId) {
+      throw new BadRequestException('Haydovchi yoki klient tanlang');
+    }
+    if (body.driverId && body.clientId) {
+      throw new BadRequestException(
+        'Bir vaqtning o‘zida haydovchi va klient tanlanmasin',
+      );
+    }
     return this.payment.submit({
       coordinatorId: user.sub,
-      driverId: body.driverId,
+      target: body.driverId
+        ? { driverId: body.driverId }
+        : { clientId: body.clientId! },
       amount: Number(body.amount),
       note: body.note ?? null,
     });
