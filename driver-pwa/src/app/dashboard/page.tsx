@@ -96,19 +96,17 @@ function DashboardInner() {
             <p className="text-[10px] tracking-widest text-neutral-400 uppercase">
               OZIMIZNI TAXI
             </p>
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold truncate">
-                {driver?.fullName ?? '—'}
-              </p>
-              <Link
-                href="/profile"
-                aria-label="Profil"
-                className="w-7 h-7 rounded-full bg-white/10 ring-1 ring-white/15 flex items-center justify-center text-neutral-200 active:scale-95 shrink-0"
-              >
-                <UserIcon size={14} strokeWidth={2.2} />
-              </Link>
-            </div>
+            <p className="text-sm font-semibold truncate">
+              {driver?.fullName ?? '—'}
+            </p>
           </div>
+          <Link
+            href="/profile"
+            aria-label="Profil"
+            className="w-9 h-9 rounded-full bg-white/10 ring-1 ring-white/15 flex items-center justify-center text-neutral-200 active:scale-95 shrink-0"
+          >
+            <UserIcon size={16} strokeWidth={2.2} />
+          </Link>
         </div>
 
         <div className="relative flex items-end justify-between gap-4">
