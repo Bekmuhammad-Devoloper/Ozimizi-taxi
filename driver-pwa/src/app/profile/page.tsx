@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
+  ArrowLeft,
   Camera,
   Car,
   CreditCard,
@@ -155,7 +156,7 @@ function Inner() {
   return (
     <>
       {/* HERO + AVATAR */}
-      <header className="relative bg-ink text-white px-6 pt-10 pb-10 rounded-b-3xl overflow-hidden text-center">
+      <header className="relative bg-ink text-white px-6 pt-6 pb-10 rounded-b-3xl overflow-hidden text-center">
         <div
           aria-hidden
           className="absolute inset-0 opacity-30 pointer-events-none"
@@ -164,6 +165,13 @@ function Inner() {
               'radial-gradient(circle at 50% 0%, rgba(250,204,21,0.45), transparent 60%)',
           }}
         />
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="absolute left-3 top-4 inline-flex items-center gap-1.5 px-2 py-1.5 text-sm text-neutral-300 active:text-white z-10"
+        >
+          <ArrowLeft size={18} /> Orqaga
+        </button>
         <div className="relative inline-block">
           <button
             type="button"

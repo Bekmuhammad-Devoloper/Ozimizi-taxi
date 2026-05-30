@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 
@@ -21,6 +22,7 @@ export default function BalancePage() {
 }
 
 function Inner() {
+  const router = useRouter();
   const [balance, setBalance] = useState<string>('0');
   const [txs, setTxs] = useState<BalanceTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +42,7 @@ function Inner() {
   return (
     <>
       {/* HERO */}
-      <header className="relative bg-ink text-white px-6 pt-10 pb-12 rounded-b-3xl overflow-hidden">
+      <header className="relative bg-ink text-white px-6 pt-6 pb-12 rounded-b-3xl overflow-hidden">
         <div
           aria-hidden
           className="absolute inset-0 opacity-30 pointer-events-none"
@@ -49,6 +51,13 @@ function Inner() {
               'radial-gradient(circle at 20% 100%, rgba(250,204,21,0.45), transparent 60%)',
           }}
         />
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="relative -ml-2 mb-4 inline-flex items-center gap-1.5 px-2 py-1.5 text-sm text-neutral-300 active:text-white"
+        >
+          <ArrowLeft size={18} /> Orqaga
+        </button>
         <div className="relative flex items-center gap-2 text-gold">
           <Wallet size={18} />
           <p className="text-xs uppercase tracking-widest font-bold">
