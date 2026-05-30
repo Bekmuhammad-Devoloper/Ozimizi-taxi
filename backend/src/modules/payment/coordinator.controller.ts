@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -83,5 +84,22 @@ export class CoordinatorController {
   @Get('requests')
   myRequests(@CurrentUser() user: JwtPayload) {
     return this.payment.listOwn(user.sub);
+  }
+
+  // Bot-initiated (driver or client self-submitted) requests that need
+  // a verdict. Coordinator can act on these just like admin.
+  @Get('pending')
+  pending() {
+    return this.payment.listPendingForCoordinator();
+  }
+
+  @Post('pending/:id/approve')
+  approve(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.payment.approve(id, user.sub);
+  }
+
+  @Post('pending/:id/reject')
+  reject(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.payment.reject(id, user.sub);
   }
 }

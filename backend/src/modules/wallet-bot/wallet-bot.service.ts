@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Context, Telegraf, Markup } from 'telegraf';
 import { Driver } from '../driver/driver.entity';
+import { Client } from '../client/client.entity';
 import { PaymentService } from '../payment/payment.service';
 import {
   PaymentEvents,
@@ -16,11 +17,16 @@ import {
 } from '../payment/payment.events';
 import { PaymentRequestStatus } from '../payment/payment-request.entity';
 
+type Role = 'driver' | 'client';
 type FsmStep = 'awaiting_amount' | 'awaiting_note';
 interface FsmState {
   mode: 'withdraw' | 'topup';
   step: FsmStep;
   amount?: number;
+}
+interface Linked {
+  role: Role;
+  id: string;
 }
 
 @Injectable()
@@ -28,10 +34,17 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WalletBotService.name);
   private bot: Telegraf | null = null;
   private readonly fsm = new Map<number, FsmState>();
+  // chatId → ambiguous-resolution context: when a phone matches both a
+  // driver and a client, remember the candidates while the user picks.
+  private readonly pendingRoleChoice = new Map<
+    number,
+    { driverId: string; clientId: string }
+  >();
 
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
+    @InjectRepository(Client) private readonly clients: Repository<Client>,
     private readonly payment: PaymentService,
     private readonly events: PaymentEvents,
   ) {}
@@ -60,16 +73,60 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  //  Phone helpers (kept in sync with AuthService normalization)
+  //  Phone + link helpers
   // ──────────────────────────────────────────────────────────────────────────
   private normalizePhone(raw: string): string {
     const digits = raw.replace(/\D/g, '');
     return '+' + digits;
   }
 
-  private async findDriverByChatId(chatId: number): Promise<Driver | null> {
-    return this.drivers.findOne({
+  /** Resolve the role this chat is currently linked to. */
+  private async findLinked(chatId: number): Promise<Linked | null> {
+    const driver = await this.drivers.findOne({
       where: { walletTelegramId: String(chatId) as any },
+    });
+    if (driver) return { role: 'driver', id: driver.id };
+    const client = await this.clients.findOne({
+      where: { walletTelegramId: String(chatId) as any },
+    });
+    if (client) return { role: 'client', id: client.id };
+    return null;
+  }
+
+  private async linkDriver(driverId: string, chatId: number) {
+    // Unlink anyone else (driver OR client) currently holding this chat.
+    await this.drivers
+      .createQueryBuilder()
+      .update(Driver)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients
+      .createQueryBuilder()
+      .update(Client)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.drivers.update(driverId, {
+      walletTelegramId: String(chatId) as any,
+    });
+  }
+
+  private async linkClient(clientId: string, chatId: number) {
+    await this.drivers
+      .createQueryBuilder()
+      .update(Driver)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients
+      .createQueryBuilder()
+      .update(Client)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients.update(clientId, {
+      walletTelegramId: String(chatId) as any,
     });
   }
 
@@ -81,8 +138,16 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     bot.command('balans', async (ctx) => this.handleBalance(ctx));
     bot.command('menu', async (ctx) => this.showMenu(ctx));
     bot.command('cancel', async (ctx) => this.cancelFlow(ctx));
+    bot.command('chiqish', async (ctx) => this.handleLogout(ctx));
 
     bot.on('contact', async (ctx) => this.handleContact(ctx));
+
+    bot.hears('🚗 Haydovchi', async (ctx) =>
+      this.resolveRoleChoice(ctx, 'driver'),
+    );
+    bot.hears('👤 Klient', async (ctx) =>
+      this.resolveRoleChoice(ctx, 'client'),
+    );
 
     bot.hears('💰 Balans', async (ctx) => this.handleBalance(ctx));
     bot.hears('📤 Pul yechish', async (ctx) =>
@@ -91,8 +156,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     bot.hears('📥 Pul tashlash', async (ctx) =>
       this.beginFlow(ctx, 'topup'),
     );
+    bot.hears('📥 Hisobni to‘ldirish', async (ctx) =>
+      this.beginFlow(ctx, 'topup'),
+    );
     bot.hears('📋 So‘rovlar tarixi', async (ctx) => this.handleHistory(ctx));
     bot.hears('❌ Bekor qilish', async (ctx) => this.cancelFlow(ctx));
+    bot.hears('🚪 Chiqish', async (ctx) => this.handleLogout(ctx));
 
     bot.on('text', async (ctx) => this.handleText(ctx));
 
@@ -107,11 +176,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   private async handleStart(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
-    const driver = await this.findDriverByChatId(chatId);
-    if (driver) {
+    const linked = await this.findLinked(chatId);
+    if (linked) {
+      const name = await this.displayName(linked);
       await ctx.reply(
-        `Salom, ${driver.fullName}! 👋\nWallet botga xush kelibsiz.`,
-        this.mainKeyboard(),
+        `Salom, ${name}! 👋\nWallet botga xush kelibsiz.`,
+        this.mainKeyboard(linked.role),
       );
       return;
     }
@@ -133,80 +203,151 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       await ctx.reply('Telefon raqam topilmadi. /start ni qayta bosing.');
       return;
     }
-    // Telegram requires that the user share *their own* contact, not someone
-    // else's — but we double-check by comparing user_id with from.id.
     if (contact.user_id && contact.user_id !== ctx.from?.id) {
-      await ctx.reply(
-        'Iltimos, faqat o‘zingizning kontaktingizni yuboring.',
-      );
+      await ctx.reply('Iltimos, faqat o‘zingizning kontaktingizni yuboring.');
       return;
     }
     const phone = this.normalizePhone(contact.phone_number);
+
     const driver = await this.drivers.findOne({
       where: [{ phone }, { phone: contact.phone_number }],
     });
-    if (!driver) {
+    const client = await this.clients.findOne({
+      where: [
+        { phonePrimary: phone },
+        { phonePrimary: contact.phone_number },
+      ],
+    });
+
+    if (!driver && !client) {
       await ctx.reply(
-        '❌ Bu raqam haydovchi ro‘yxatida yo‘q.\n\n' +
-          'Avval admin sizni tizimga qo‘shishi kerak. Admin bilan bog‘laning.',
+        '❌ Bu raqam tizimda topilmadi.\n\n' +
+          'Klient sifatida ro‘yxatdan o‘tish: @ozimizitaxi_bot orqali /start qiling.\n' +
+          'Haydovchi bo‘lish uchun admin bilan bog‘laning.',
         Markup.removeKeyboard(),
       );
       return;
     }
-    if (!driver.isActive) {
-      await ctx.reply(
-        '❌ Akkauntingiz faol emas. Admin bilan bog‘laning.',
-        Markup.removeKeyboard(),
-      );
-      return;
-    }
-    // If another driver had this chat linked, unlink it first.
-    if (driver.walletTelegramId !== String(chatId)) {
-      await this.drivers
-        .createQueryBuilder()
-        .update(Driver)
-        .set({ walletTelegramId: null as any })
-        .where('wallet_telegram_id = :cid', { cid: String(chatId) })
-        .execute();
-      await this.drivers.update(driver.id, {
-        walletTelegramId: String(chatId) as any,
+
+    if (driver && client) {
+      // Both — let the user pick. Cache the candidates briefly.
+      this.pendingRoleChoice.set(chatId, {
+        driverId: driver.id,
+        clientId: client.id,
       });
+      await ctx.reply(
+        'Bu raqam ham haydovchi, ham klient sifatida ro‘yxatdan o‘tgan.\n' +
+          'Qaysi hisob bilan kirasiz?',
+        Markup.keyboard([['🚗 Haydovchi', '👤 Klient']])
+          .oneTime()
+          .resize(),
+      );
+      return;
     }
+
+    if (driver) {
+      if (!driver.isActive) {
+        await ctx.reply(
+          '❌ Haydovchi akkauntingiz faol emas. Admin bilan bog‘laning.',
+          Markup.removeKeyboard(),
+        );
+        return;
+      }
+      await this.linkDriver(driver.id, chatId);
+      await ctx.reply(
+        `✅ Salom, ${driver.fullName}!\n` +
+          `Haydovchi hisobi ulandi.\n\n` +
+          `💰 Joriy balans: <b>${this.fmt(driver.balance)} so‘m</b>`,
+        { parse_mode: 'HTML', ...this.mainKeyboard('driver') },
+      );
+      return;
+    }
+
+    // Client only
+    await this.linkClient(client!.id, chatId);
     await ctx.reply(
-      `✅ Salom, ${driver.fullName}!\n` +
-        `Hisobingiz muvaffaqiyatli ulandi.\n\n` +
-        `💰 Joriy balans: <b>${this.fmt(driver.balance)} so‘m</b>`,
-      { parse_mode: 'HTML', ...this.mainKeyboard() },
+      `✅ Salom, ${client!.firstName}!\n` +
+        `Klient hisobi ulandi.\n\n` +
+        `💰 Joriy balans: <b>${this.fmt(client!.balance)} so‘m</b>`,
+      { parse_mode: 'HTML', ...this.mainKeyboard('client') },
+    );
+  }
+
+  private async resolveRoleChoice(ctx: Context, picked: Role) {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const pending = this.pendingRoleChoice.get(chatId);
+    if (!pending) return; // not in role-choice flow — let menu hears handlers run
+
+    this.pendingRoleChoice.delete(chatId);
+    if (picked === 'driver') {
+      const driver = await this.drivers.findOne({
+        where: { id: pending.driverId },
+      });
+      if (!driver || !driver.isActive) {
+        await ctx.reply(
+          '❌ Haydovchi hisobi faol emas. Admin bilan bog‘laning.',
+          Markup.removeKeyboard(),
+        );
+        return;
+      }
+      await this.linkDriver(driver.id, chatId);
+      await ctx.reply(
+        `✅ Haydovchi hisobi (${driver.fullName}) ulandi.\n` +
+          `💰 Balans: <b>${this.fmt(driver.balance)} so‘m</b>`,
+        { parse_mode: 'HTML', ...this.mainKeyboard('driver') },
+      );
+      return;
+    }
+    const client = await this.clients.findOne({
+      where: { id: pending.clientId },
+    });
+    if (!client) {
+      await ctx.reply('Klient topilmadi.', Markup.removeKeyboard());
+      return;
+    }
+    await this.linkClient(client.id, chatId);
+    await ctx.reply(
+      `✅ Klient hisobi (${client.firstName}) ulandi.\n` +
+        `💰 Balans: <b>${this.fmt(client.balance)} so‘m</b>`,
+      { parse_mode: 'HTML', ...this.mainKeyboard('client') },
     );
   }
 
   private async handleBalance(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
-    const driver = await this.findDriverByChatId(chatId);
-    if (!driver) return this.askLogin(ctx);
-    // Re-fetch latest balance.
-    const fresh = await this.drivers.findOne({ where: { id: driver.id } });
+    const linked = await this.findLinked(chatId);
+    if (!linked) return this.askLogin(ctx);
+    const balance = await this.balanceOf(linked);
     await ctx.reply(
-      `💰 <b>Balans:</b> ${this.fmt(fresh?.balance ?? '0')} so‘m`,
-      { parse_mode: 'HTML', ...this.mainKeyboard() },
+      `💰 <b>Balans:</b> ${this.fmt(balance)} so‘m`,
+      { parse_mode: 'HTML', ...this.mainKeyboard(linked.role) },
     );
   }
 
   private async showMenu(ctx: Context) {
-    const driver = await this.findDriverByChatId(ctx.chat?.id ?? 0);
-    if (!driver) return this.askLogin(ctx);
-    await ctx.reply('Menyu:', this.mainKeyboard());
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const linked = await this.findLinked(chatId);
+    if (!linked) return this.askLogin(ctx);
+    await ctx.reply('Menyu:', this.mainKeyboard(linked.role));
   }
 
   private async handleHistory(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
-    const driver = await this.findDriverByChatId(chatId);
-    if (!driver) return this.askLogin(ctx);
-    const rows = await this.payment.listByDriver(driver.id, 10);
+    const linked = await this.findLinked(chatId);
+    if (!linked) return this.askLogin(ctx);
+    const rows =
+      linked.role === 'driver'
+        ? await this.payment.listByDriver(linked.id, 10)
+        : await this.payment.listByClient(linked.id, 10);
     if (!rows.length) {
-      await ctx.reply('📋 So‘rovlar tarixi bo‘sh.', this.mainKeyboard());
+      await ctx.reply(
+        '📋 So‘rovlar tarixi bo‘sh.',
+        this.mainKeyboard(linked.role),
+      );
       return;
     }
     const lines = rows.map((r) => {
@@ -227,15 +368,23 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     });
     await ctx.reply(
       `📋 <b>Oxirgi so‘rovlar:</b>\n\n${lines.join('\n')}`,
-      { parse_mode: 'HTML', ...this.mainKeyboard() },
+      { parse_mode: 'HTML', ...this.mainKeyboard(linked.role) },
     );
   }
 
   private async beginFlow(ctx: Context, mode: 'withdraw' | 'topup') {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
-    const driver = await this.findDriverByChatId(chatId);
-    if (!driver) return this.askLogin(ctx);
+    const linked = await this.findLinked(chatId);
+    if (!linked) return this.askLogin(ctx);
+    // Clients can only top up — never withdraw from the system here.
+    if (linked.role === 'client' && mode === 'withdraw') {
+      await ctx.reply(
+        'Klient hisobi faqat to‘ldiriladi. Pul yechish admin bilan bog‘lanib amalga oshiriladi.',
+        this.mainKeyboard('client'),
+      );
+      return;
+    }
     this.fsm.set(chatId, { mode, step: 'awaiting_amount' });
     const label = mode === 'withdraw' ? 'yechmoqchi' : 'tashlamoqchi';
     await ctx.reply(
@@ -250,18 +399,52 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   private async cancelFlow(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
+    const linked = await this.findLinked(chatId);
     if (this.fsm.delete(chatId)) {
-      await ctx.reply('🚫 Bekor qilindi.', this.mainKeyboard());
+      await ctx.reply(
+        '🚫 Bekor qilindi.',
+        linked
+          ? this.mainKeyboard(linked.role)
+          : Markup.removeKeyboard(),
+      );
     } else {
-      await ctx.reply('Faol so‘rov yo‘q.', this.mainKeyboard());
+      await ctx.reply(
+        'Faol so‘rov yo‘q.',
+        linked
+          ? this.mainKeyboard(linked.role)
+          : Markup.removeKeyboard(),
+      );
     }
+  }
+
+  private async handleLogout(ctx: Context) {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    await this.drivers
+      .createQueryBuilder()
+      .update(Driver)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients
+      .createQueryBuilder()
+      .update(Client)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    this.fsm.delete(chatId);
+    this.pendingRoleChoice.delete(chatId);
+    await ctx.reply(
+      'Hisob ajratildi. Qayta kirish uchun /start ni bosing.',
+      Markup.removeKeyboard(),
+    );
   }
 
   private async handleText(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
     const state = this.fsm.get(chatId);
-    if (!state) return; // not in a flow — ignore so menu buttons still match
+    if (!state) return;
     const text = ((ctx.message as any)?.text ?? '').trim();
     if (!text || text.startsWith('/')) return;
     // Skip menu button labels that fell through the hears() handlers.
@@ -269,8 +452,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       text === '💰 Balans' ||
       text === '📤 Pul yechish' ||
       text === '📥 Pul tashlash' ||
+      text === '📥 Hisobni to‘ldirish' ||
       text === '📋 So‘rovlar tarixi' ||
-      text === '❌ Bekor qilish'
+      text === '❌ Bekor qilish' ||
+      text === '🚪 Chiqish' ||
+      text === '🚗 Haydovchi' ||
+      text === '👤 Klient'
     ) {
       return;
     }
@@ -299,34 +486,45 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
 
     if (state.step === 'awaiting_note') {
       const note = text === '-' ? null : text.slice(0, 300);
-      const driver = await this.findDriverByChatId(chatId);
-      if (!driver || !state.amount) {
+      const linked = await this.findLinked(chatId);
+      if (!linked || !state.amount) {
         this.fsm.delete(chatId);
         await ctx.reply(
           'Xato yuz berdi, qaytadan urinib ko‘ring.',
-          this.mainKeyboard(),
+          linked
+            ? this.mainKeyboard(linked.role)
+            : Markup.removeKeyboard(),
         );
         return;
       }
       const signed = state.mode === 'withdraw' ? -state.amount : state.amount;
       try {
-        await this.payment.submitByDriver({
-          driverId: driver.id,
-          amount: signed,
-          note,
-        });
+        if (linked.role === 'driver') {
+          await this.payment.submitByDriver({
+            driverId: linked.id,
+            amount: signed,
+            note,
+          });
+        } else {
+          // Clients: always positive (beginFlow blocks withdraw earlier).
+          await this.payment.submitByClient({
+            clientId: linked.id,
+            amount: Math.abs(state.amount),
+            note,
+          });
+        }
         this.fsm.delete(chatId);
         await ctx.reply(
           `✅ <b>So‘rov yuborildi</b>\n\n` +
             `Summa: ${signed >= 0 ? '+' : ''}${this.fmt(signed)} so‘m\n` +
             (note ? `Izoh: ${note}\n` : '') +
-            `\n⏳ Admin tasdiqlashi kutilmoqda. Javob shu yerga keladi.`,
-          { parse_mode: 'HTML', ...this.mainKeyboard() },
+            `\n⏳ Tasdiqlash kutilmoqda. Javob shu yerga keladi.`,
+          { parse_mode: 'HTML', ...this.mainKeyboard(linked.role) },
         );
       } catch (e: any) {
         this.fsm.delete(chatId);
         const msg = e?.response?.message ?? e?.message ?? 'Xato yuz berdi';
-        await ctx.reply(`❌ ${msg}`, this.mainKeyboard());
+        await ctx.reply(`❌ ${msg}`, this.mainKeyboard(linked.role));
       }
     }
   }
@@ -343,7 +541,7 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  //  Driver notifications on admin decision
+  //  DM on admin/coordinator decision
   // ──────────────────────────────────────────────────────────────────────────
   private subscribeToPaymentEvents() {
     this.events.on('payment.approved', (p) => this.notifyDecision(p, true));
@@ -355,23 +553,40 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     approved: boolean,
   ) {
     try {
-      // Wallet bot only DMs drivers. Client-targeted requests have no
-      // driver_id and are skipped (clients use the Telegram main bot).
-      const driverId = payload.request.driverId;
-      if (!driverId) return;
-      const driver = await this.drivers.findOne({ where: { id: driverId } });
-      if (!driver?.walletTelegramId || !this.bot) return;
-      const chatId = Number(driver.walletTelegramId);
-      if (!Number.isFinite(chatId)) return;
-
+      if (!this.bot) return;
+      let chatId: number | null = null;
+      let balanceLine = '';
       const amount = Number(payload.request.amount);
       const sign = amount >= 0 ? '+' : '';
-      const verdict = approved ? '✅ Tasdiqlandi' : '❌ Rad etildi';
-      const balanceLine =
-        approved && payload.driverBalance !== undefined
-          ? `\n💰 Yangi balans: <b>${this.fmt(payload.driverBalance)} so‘m</b>`
-          : '';
 
+      if (payload.request.driverId) {
+        const driver = await this.drivers.findOne({
+          where: { id: payload.request.driverId },
+        });
+        if (driver?.walletTelegramId) {
+          const cid = Number(driver.walletTelegramId);
+          if (Number.isFinite(cid)) chatId = cid;
+        }
+        if (approved && payload.driverBalance !== undefined) {
+          balanceLine = `\n💰 Yangi balans: <b>${this.fmt(
+            payload.driverBalance,
+          )} so‘m</b>`;
+        }
+      } else if (payload.request.clientId) {
+        const client = await this.clients.findOne({
+          where: { id: payload.request.clientId },
+        });
+        if (client?.walletTelegramId) {
+          const cid = Number(client.walletTelegramId);
+          if (Number.isFinite(cid)) chatId = cid;
+        }
+        if (approved && client) {
+          balanceLine = `\n💰 Yangi balans: <b>${this.fmt(client.balance)} so‘m</b>`;
+        }
+      }
+
+      if (chatId == null) return;
+      const verdict = approved ? '✅ Tasdiqlandi' : '❌ Rad etildi';
       await this.bot.telegram.sendMessage(
         chatId,
         `${verdict}\n\n` +
@@ -388,12 +603,38 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   // ──────────────────────────────────────────────────────────────────────────
   //  UI helpers
   // ──────────────────────────────────────────────────────────────────────────
-  private mainKeyboard() {
+  private mainKeyboard(role: Role) {
+    if (role === 'driver') {
+      return Markup.keyboard([
+        ['💰 Balans'],
+        ['📤 Pul yechish', '📥 Pul tashlash'],
+        ['📋 So‘rovlar tarixi'],
+        ['🚪 Chiqish'],
+      ]).resize();
+    }
     return Markup.keyboard([
-      ['💰 Balans'],
-      ['📤 Pul yechish', '📥 Pul tashlash'],
+      ['💰 Balans', '📥 Hisobni to‘ldirish'],
       ['📋 So‘rovlar tarixi'],
+      ['🚪 Chiqish'],
     ]).resize();
+  }
+
+  private async displayName(linked: Linked): Promise<string> {
+    if (linked.role === 'driver') {
+      const d = await this.drivers.findOne({ where: { id: linked.id } });
+      return d?.fullName ?? 'Haydovchi';
+    }
+    const c = await this.clients.findOne({ where: { id: linked.id } });
+    return c?.firstName ?? 'Klient';
+  }
+
+  private async balanceOf(linked: Linked): Promise<string> {
+    if (linked.role === 'driver') {
+      const d = await this.drivers.findOne({ where: { id: linked.id } });
+      return d?.balance ?? '0';
+    }
+    const c = await this.clients.findOne({ where: { id: linked.id } });
+    return c?.balance ?? '0';
   }
 
   private fmt(v: number | string): string {

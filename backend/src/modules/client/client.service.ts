@@ -105,6 +105,30 @@ export class ClientService {
     });
   }
 
+  findByPhone(phone: string) {
+    return this.clients.findOne({ where: { phonePrimary: phone } });
+  }
+
+  findByWalletTelegramId(chatId: number | string) {
+    return this.clients.findOne({
+      where: { walletTelegramId: String(chatId) as any },
+    });
+  }
+
+  async setWalletTelegramId(clientId: string, chatId: number | string) {
+    // Unlink any other client that previously had this chat (cascade-like
+    // ownership transfer when a Telegram user switches accounts).
+    await this.clients
+      .createQueryBuilder()
+      .update()
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients.update(clientId, {
+      walletTelegramId: String(chatId) as any,
+    });
+  }
+
   /**
    * Avatar TTL: re-download when older than 7 days. Returns true if a
    * fresh fetch should be attempted.

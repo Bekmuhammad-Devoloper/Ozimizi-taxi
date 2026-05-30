@@ -40,6 +40,8 @@ interface RequestRow {
   decidedAt: string | null;
   driver?: DriverLite | null;
   client?: { firstName: string; phonePrimary: string } | null;
+  driverRequester?: { fullName: string } | null;
+  clientRequester?: { firstName: string } | null;
 }
 
 type TargetType = 'driver' | 'client';
@@ -71,6 +73,28 @@ export default function CoordinatorPage() {
     queryKey: ['coordinator', 'requests'],
     queryFn: async () =>
       (await api.get<RequestRow[]>('/coordinator/requests')).data,
+  });
+
+  const { data: pending } = useQuery({
+    queryKey: ['coordinator', 'pending'],
+    queryFn: async () =>
+      (await api.get<RequestRow[]>('/coordinator/pending')).data,
+    refetchInterval: 15_000,
+  });
+
+  const approve = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/coordinator/pending/${id}/approve`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['coordinator', 'pending'] });
+    },
+  });
+  const reject = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/coordinator/pending/${id}/reject`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['coordinator', 'pending'] });
+    },
   });
 
   const switchTarget = (t: TargetType) => {
@@ -417,6 +441,101 @@ export default function CoordinatorPage() {
           )}
         </div>
       </div>
+
+      {/* Bot-initiated requests waiting for a verdict (driver wallet bot
+          or client wallet bot self-submissions). Coordinator can approve
+          or reject these directly. */}
+      <section className="mt-4">
+        <div className="card p-5">
+          <h3 className="font-bold mb-3 flex items-center gap-2">
+            <Inbox size={18} className="text-gold-deep" />
+            Klient va haydovchi so‘rovlari
+            {pending && pending.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-gold text-ink">
+                {pending.length}
+              </span>
+            )}
+          </h3>
+          {!pending?.length ? (
+            <p className="text-sm text-neutral-500">
+              Yangi so‘rovlar yo‘q.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {pending.map((r) => (
+                <li
+                  key={r.id}
+                  className="border border-line rounded-xl p-3 flex items-center gap-3 flex-wrap"
+                >
+                  <span
+                    className={
+                      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide shrink-0 ' +
+                      (r.clientId
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-neutral-100 text-neutral-600')
+                    }
+                  >
+                    {r.clientId ? '👤 Klient' : '🚗 Haydovchi'}
+                  </span>
+                  <div className="flex-1 min-w-[150px]">
+                    <p className="font-semibold text-sm truncate">
+                      {r.driver?.fullName ?? r.client?.firstName ?? '—'}
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      {new Date(r.createdAt).toLocaleString('uz', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {r.note ? ' · ' + r.note : ''}
+                    </p>
+                  </div>
+                  <p
+                    className={
+                      'font-bold tabular-nums text-sm shrink-0 ' +
+                      (Number(r.amount) >= 0
+                        ? 'text-green-700'
+                        : 'text-red-700')
+                    }
+                  >
+                    {Number(r.amount) >= 0 ? '+' : ''}
+                    {Number(r.amount).toLocaleString('uz')}
+                  </p>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      disabled={approve.isPending || reject.isPending}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `${Number(r.amount).toLocaleString('uz')} so'm tasdiqlansinmi?`,
+                          )
+                        )
+                          approve.mutate(r.id);
+                      }}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                      title="Tasdiqlash"
+                    >
+                      <Check size={16} />
+                    </button>
+                    <button
+                      disabled={approve.isPending || reject.isPending}
+                      onClick={() => {
+                        if (confirm('So‘rov rad etilsinmi?'))
+                          reject.mutate(r.id);
+                      }}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                      title="Rad etish"
+                    >
+                      <XIcon size={16} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
     </Shell>
   );
 }

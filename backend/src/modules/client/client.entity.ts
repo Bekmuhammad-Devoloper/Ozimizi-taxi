@@ -52,6 +52,16 @@ export class Client {
   @Column({ name: 'avatar_fetched_at', type: 'timestamptz', nullable: true })
   avatarFetchedAt: Date | null;
 
+  // Set when the client runs /start in @ozimizitaxi_walletbot and shares
+  // their contact. Used by the wallet bot to DM top-up verdicts.
+  @Index({ unique: true, where: 'wallet_telegram_id IS NOT NULL' })
+  @Column({
+    name: 'wallet_telegram_id',
+    type: 'bigint',
+    nullable: true,
+  })
+  walletTelegramId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

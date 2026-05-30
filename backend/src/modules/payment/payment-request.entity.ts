@@ -68,6 +68,13 @@ export class PaymentRequest {
   @JoinColumn({ name: 'requested_by_driver' })
   driverRequester: Driver | null;
 
+  @Column({ name: 'requested_by_client', type: 'uuid', nullable: true })
+  requestedByClient: string | null;
+
+  @ManyToOne(() => Client, { nullable: true })
+  @JoinColumn({ name: 'requested_by_client' })
+  clientRequester: Client | null;
+
   @Column({ name: 'decided_by', type: 'uuid', nullable: true })
   decidedBy: string | null;
 

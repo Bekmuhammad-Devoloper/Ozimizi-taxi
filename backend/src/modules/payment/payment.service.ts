@@ -101,6 +101,48 @@ export class PaymentService {
     return saved;
   }
 
+  /** Client-initiated top-up request via the wallet bot. Always positive. */
+  async submitByClient(params: {
+    clientId: string;
+    amount: number;
+    note?: string | null;
+  }): Promise<PaymentRequest> {
+    this.validateAmount(params.amount);
+    if (params.amount < 0) {
+      throw new BadRequestException(
+        'Klient hisobini faqat to‘ldirish mumkin, yechish admin orqali.',
+      );
+    }
+    const client = await this.clients.findOne({
+      where: { id: params.clientId },
+    });
+    if (!client) throw new NotFoundException('Klient topilmadi');
+    const pending = await this.requests.count({
+      where: {
+        clientId: params.clientId,
+        status: PaymentRequestStatus.PENDING,
+      },
+    });
+    if (pending >= 3) {
+      throw new BadRequestException(
+        'Sizda 3 ta tasdiqlanmagan so‘rov bor. Avvalgilarini kuting.',
+      );
+    }
+    const row = this.requests.create({
+      driverId: null,
+      clientId: params.clientId,
+      amount: params.amount.toFixed(2),
+      status: PaymentRequestStatus.PENDING,
+      requestedBy: null,
+      requestedByDriver: null,
+      requestedByClient: params.clientId,
+      note: params.note ?? null,
+    });
+    const saved = await this.requests.save(row);
+    this.events.emit('payment.submitted', { request: saved });
+    return saved;
+  }
+
   /** Driver-initiated request via the wallet bot. Always targets self. */
   async submitByDriver(
     params: SubmitByDriverParams,
@@ -157,6 +199,15 @@ export class PaymentService {
     });
   }
 
+  /** Client-scoped: own top-up requests submitted via the wallet bot. */
+  listByClient(clientId: string, limit = 20): Promise<PaymentRequest[]> {
+    return this.requests.find({
+      where: { requestedByClient: clientId },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
   /** Admin-scoped: every request, optionally filtered by status. */
   listAll(
     status?: PaymentRequestStatus,
@@ -170,10 +221,33 @@ export class PaymentService {
         requester: true,
         decider: true,
         driverRequester: true,
+        clientRequester: true,
       },
       order: { createdAt: 'DESC' },
       take: limit,
     });
+  }
+
+  /**
+   * Coordinator-visible pending queue: bot-initiated requests (driver or
+   * client self-submits) that need a verdict. Coordinators' own
+   * /coordinator/requests submissions are excluded — those are admin-only
+   * to approve so a coordinator can't sign off on their own ask.
+   */
+  listPendingForCoordinator(limit = 100): Promise<PaymentRequest[]> {
+    return this.requests
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.driver', 'd')
+      .leftJoinAndSelect('r.client', 'c')
+      .leftJoinAndSelect('r.driverRequester', 'dr')
+      .leftJoinAndSelect('r.clientRequester', 'cr')
+      .where('r.status = :s', { s: PaymentRequestStatus.PENDING })
+      .andWhere(
+        '(r.requested_by_driver IS NOT NULL OR r.requested_by_client IS NOT NULL)',
+      )
+      .orderBy('r.created_at', 'DESC')
+      .take(limit)
+      .getMany();
   }
 
   async approve(
