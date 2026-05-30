@@ -355,9 +355,11 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     approved: boolean,
   ) {
     try {
-      const driver = await this.drivers.findOne({
-        where: { id: payload.request.driverId },
-      });
+      // Wallet bot only DMs drivers. Client-targeted requests have no
+      // driver_id and are skipped (clients use the Telegram main bot).
+      const driverId = payload.request.driverId;
+      if (!driverId) return;
+      const driver = await this.drivers.findOne({ where: { id: driverId } });
       if (!driver?.walletTelegramId || !this.bot) return;
       const chatId = Number(driver.walletTelegramId);
       if (!Number.isFinite(chatId)) return;
