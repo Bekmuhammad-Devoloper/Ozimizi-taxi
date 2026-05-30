@@ -9,13 +9,11 @@ import {
   ChevronRight,
   Sparkles,
   AlertTriangle,
-  User as UserIcon,
 } from 'lucide-react';
 import { IOSSwitch } from '@/components/IOSSwitch';
 import { Shell } from '@/components/Shell';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
-import { assetUrl } from '@/lib/asset';
 import { OrderModel, useOrderStore } from '@/stores/order';
 
 export default function DashboardPage() {
@@ -73,8 +71,8 @@ function DashboardInner() {
 
   return (
     <>
-      {/* HERO — compact: name + profile shortcut, online toggle below */}
-      <header className="relative bg-ink text-white px-6 pt-8 pb-6 rounded-b-3xl overflow-hidden">
+      {/* HERO with inline TOGGLE */}
+      <header className="relative bg-ink text-white px-6 pt-10 pb-8 rounded-b-3xl overflow-hidden">
         <div
           aria-hidden
           className="absolute inset-0 opacity-30 pointer-events-none"
@@ -83,49 +81,50 @@ function DashboardInner() {
               'radial-gradient(circle at 80% 0%, rgba(250,204,21,0.45), transparent 60%)',
           }}
         />
+        <div className="relative flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-lg overflow-hidden ring-1 ring-gold/50">
+            <Image
+              src="/logo.jpg"
+              alt="OZIMIZNI TAXI"
+              width={40}
+              height={40}
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div className="flex-1 leading-tight">
+            <p className="text-[10px] tracking-widest text-neutral-400 uppercase">
+              OZIMIZNI TAXI
+            </p>
+            <p className="text-sm font-semibold">{driver?.fullName ?? '—'}</p>
+          </div>
+        </div>
 
-        <div className="relative flex items-center gap-3">
-          <Link
-            href="/profile"
-            aria-label="Profil"
-            className="flex-1 min-w-0 flex items-center gap-3 active:opacity-80"
-          >
-            <span className="w-11 h-11 rounded-full overflow-hidden bg-gold/15 ring-1 ring-gold/40 flex items-center justify-center shrink-0">
-              {driver?.avatarUrl ? (
-                <Image
-                  src={assetUrl(driver.avatarUrl)}
-                  alt={driver?.fullName ?? 'avatar'}
-                  width={44}
-                  height={44}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <UserIcon size={20} className="text-gold" />
-              )}
-            </span>
-            <div className="min-w-0">
-              <p className="text-base font-bold truncate leading-tight">
-                {driver?.fullName ?? '—'}
-              </p>
-              <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                {driver?.phone}
-              </p>
-            </div>
-          </Link>
+        <div className="relative flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-neutral-400">
+              Balans
+            </p>
+            <p className="mt-1 text-3xl font-extrabold tabular-nums leading-none">
+              {fmt(driver?.balance ?? 0)}
+              <span className="ml-2 text-sm font-normal text-neutral-400">
+                so‘m
+              </span>
+            </p>
+          </div>
 
           {driver?.isApproved === false ? (
-            <span className="shrink-0 px-3 py-1.5 inline-flex items-center gap-1.5 rounded-full bg-orange-100 text-orange-800 text-[11px] font-bold border border-orange-300">
-              <AlertTriangle size={13} /> Tasdiq kutilmoqda
+            <span className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-orange-100 text-orange-800 text-sm font-bold border border-orange-300">
+              <AlertTriangle size={16} /> Tasdiq kutilmoqda
             </span>
           ) : driver?.profileComplete === false ? (
             <Link
               href="/profile"
-              className="shrink-0 px-3 py-1.5 inline-flex items-center gap-1.5 rounded-full bg-gold text-ink text-[11px] font-bold shadow shadow-gold/30 active:scale-[0.98]"
+              className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-gold text-ink text-sm font-bold shadow-lg shadow-gold/30 active:scale-[0.98]"
             >
-              <AlertTriangle size={13} /> Profilni to‘ldiring
+              <AlertTriangle size={16} /> Profilni to‘ldiring
             </Link>
           ) : (
-            <div className="shrink-0 flex items-center gap-2">
+            <div className="shrink-0 flex flex-col items-end gap-2">
               <span
                 className={
                   'text-[10px] uppercase tracking-widest font-bold ' +
@@ -143,7 +142,6 @@ function DashboardInner() {
             </div>
           )}
         </div>
-
         {err && <p className="relative mt-3 text-xs text-red-300">{err}</p>}
       </header>
 
