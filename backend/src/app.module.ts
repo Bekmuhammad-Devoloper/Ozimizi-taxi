@@ -1,5 +1,7 @@
 import { config as loadDotenv } from 'dotenv';
-loadDotenv();
+// override=true so values from .env always win over stale env inherited
+// from PM2 (e.g. an old BOT_TOKEN cached from the first `pm2 start`).
+loadDotenv({ override: true });
 
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
