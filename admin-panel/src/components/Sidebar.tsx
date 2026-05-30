@@ -15,6 +15,7 @@ import {
   Wallet,
   Inbox,
   ShieldCheck,
+  MessageSquare,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -26,6 +27,7 @@ const adminItems = [
   { href: '/drivers', label: 'Haydovchilar', icon: Car },
   { href: '/clients', label: 'Klientlar', icon: Users },
   { href: '/payment-requests', label: 'To‘lov so‘rovlari', icon: Inbox },
+  { href: '/feedback', label: 'Murojaatlar', icon: MessageSquare },
   { href: '/coordinators', label: 'Koordinatorlar', icon: ShieldCheck },
   { href: '/tariff', label: 'Tariflar', icon: Receipt },
   { href: '/settings', label: 'Sozlamalar', icon: Settings },

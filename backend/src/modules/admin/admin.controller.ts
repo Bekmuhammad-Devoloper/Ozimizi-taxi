@@ -27,6 +27,7 @@ import { BalanceService } from '../balance/balance.service';
 import { SETTING_KEYS, SettingKey } from '../settings/site-setting.entity';
 import { PaymentService } from '../payment/payment.service';
 import { PaymentRequestStatus } from '../payment/payment-request.entity';
+import { FeedbackService } from '../feedback/feedback.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Admin } from './admin.entity';
@@ -48,6 +49,7 @@ export class AdminController {
     private readonly settings: SettingsService,
     private readonly balance: BalanceService,
     private readonly payment: PaymentService,
+    private readonly feedback: FeedbackService,
     @InjectRepository(Admin) private readonly admins: Repository<Admin>,
   ) {}
 
@@ -271,5 +273,27 @@ export class AdminController {
     }
     await this.admins.remove(row);
     return { ok: true };
+  }
+
+  // --- feedback inbox (Telegram complaints/suggestions bot) ----------------
+
+  @Get('feedback')
+  listFeedback(@Query('unreadOnly') unreadOnly?: string) {
+    return this.feedback.list({ unreadOnly: unreadOnly === 'true' });
+  }
+
+  @Get('feedback/unread-count')
+  async feedbackUnread() {
+    return { count: await this.feedback.unreadCount() };
+  }
+
+  @Post('feedback/:id/read')
+  markFeedbackRead(@Param('id') id: string) {
+    return this.feedback.markRead(id);
+  }
+
+  @Post('feedback/read-all')
+  markAllFeedbackRead() {
+    return this.feedback.markAllRead();
   }
 }

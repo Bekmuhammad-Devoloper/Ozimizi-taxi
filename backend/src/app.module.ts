@@ -16,9 +16,11 @@ import { Admin } from './modules/admin/admin.entity';
 import { PasswordResetToken } from './modules/auth/password-reset-token.entity';
 import { SiteSetting } from './modules/settings/site-setting.entity';
 import { PaymentRequest } from './modules/payment/payment-request.entity';
+import { Feedback } from './modules/feedback/feedback.entity';
 import { MailerModule } from './modules/mailer/mailer.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientModule } from './modules/client/client.module';
@@ -31,6 +33,7 @@ import { BotModule } from './modules/bot/bot.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { GatewaysModule } from './modules/realtime/gateways.module';
 import { WalletBotModule } from './modules/wallet-bot/wallet-bot.module';
+import { FeedbackBotModule } from './modules/feedback-bot/feedback-bot.module';
 
 function isRealTelegramToken(t: string | undefined): boolean {
   // Real BotFather tokens look like "<digits>:<35-char alnum>". Reject placeholders.
@@ -57,6 +60,12 @@ const walletBotImports: DynamicModule['imports'] = isRealTelegramToken(
   process.env.WALLET_BOT_TOKEN,
 )
   ? [WalletBotModule]
+  : [];
+
+const feedbackBotImports: DynamicModule['imports'] = isRealTelegramToken(
+  process.env.FEEDBACK_BOT_TOKEN,
+)
+  ? [FeedbackBotModule]
   : [];
 
 @Module({
@@ -86,6 +95,7 @@ const walletBotImports: DynamicModule['imports'] = isRealTelegramToken(
           PasswordResetToken,
           SiteSetting,
           PaymentRequest,
+          Feedback,
         ],
         autoLoadEntities: true,
         synchronize: false,
@@ -94,6 +104,7 @@ const walletBotImports: DynamicModule['imports'] = isRealTelegramToken(
     MailerModule,
     SettingsModule,
     PaymentModule,
+    FeedbackModule,
     RealtimeModule,
     AuthModule,
     ClientModule,
@@ -105,6 +116,7 @@ const walletBotImports: DynamicModule['imports'] = isRealTelegramToken(
     GatewaysModule,
     ...botImports,
     ...walletBotImports,
+    ...feedbackBotImports,
   ],
 })
 export class AppModule {}
