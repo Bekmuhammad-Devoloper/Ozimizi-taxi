@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Sparkles,
   AlertTriangle,
+  User as UserIcon,
 } from 'lucide-react';
 import { IOSSwitch } from '@/components/IOSSwitch';
 import { Shell } from '@/components/Shell';
@@ -91,11 +92,22 @@ function DashboardInner() {
               className="w-full h-full object-cover"
             />
           </div>
-          <div className="flex-1 leading-tight">
+          <div className="flex-1 leading-tight min-w-0">
             <p className="text-[10px] tracking-widest text-neutral-400 uppercase">
               OZIMIZNI TAXI
             </p>
-            <p className="text-sm font-semibold">{driver?.fullName ?? '—'}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold truncate">
+                {driver?.fullName ?? '—'}
+              </p>
+              <Link
+                href="/profile"
+                aria-label="Profil"
+                className="w-7 h-7 rounded-full bg-white/10 ring-1 ring-white/15 flex items-center justify-center text-neutral-200 active:scale-95 shrink-0"
+              >
+                <UserIcon size={14} strokeWidth={2.2} />
+              </Link>
+            </div>
           </div>
         </div>
 
