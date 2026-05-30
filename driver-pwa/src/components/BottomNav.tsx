@@ -1,14 +1,15 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ClipboardList, Wallet, User } from 'lucide-react';
+import { Home, ClipboardList, Wallet } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
+// Profile is now reachable from the dashboard header icon, so it no
+// longer needs a slot in the bottom nav.
 const items = [
   { href: '/dashboard', label: 'Asosiy', icon: Home },
   { href: '/orders', label: 'Buyurtma', icon: ClipboardList },
   { href: '/balance', label: 'Balans', icon: Wallet },
-  { href: '/profile', label: 'Profil', icon: User },
 ];
 
 export function BottomNav() {
@@ -29,7 +30,7 @@ export function BottomNav() {
               'radial-gradient(circle at 50% 120%, rgba(250,204,21,0.35), transparent 60%)',
           }}
         />
-        <div className="relative grid grid-cols-4">
+        <div className="relative grid grid-cols-3">
           {items.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
