@@ -10,14 +10,16 @@ import { Repository } from 'typeorm';
 import { Context, Telegraf, Markup } from 'telegraf';
 import { Driver } from '../driver/driver.entity';
 import { Client } from '../client/client.entity';
+import { Admin } from '../admin/admin.entity';
 import { PaymentService } from '../payment/payment.service';
 import {
   PaymentEvents,
   PaymentEventPayload,
 } from '../payment/payment.events';
 import { PaymentRequestStatus } from '../payment/payment-request.entity';
+import { WalletBotLinkService } from './wallet-bot-link.service';
 
-type Role = 'driver' | 'client';
+type Role = 'driver' | 'client' | 'coordinator';
 type FsmStep = 'awaiting_amount' | 'awaiting_note';
 interface FsmState {
   mode: 'withdraw' | 'topup';
@@ -45,8 +47,10 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
     @InjectRepository(Client) private readonly clients: Repository<Client>,
+    @InjectRepository(Admin) private readonly admins: Repository<Admin>,
     private readonly payment: PaymentService,
     private readonly events: PaymentEvents,
+    private readonly links: WalletBotLinkService,
   ) {}
 
   async onModuleInit() {
@@ -89,6 +93,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
 
   /** Resolve the role this chat is currently linked to. */
   private async findLinked(chatId: number): Promise<Linked | null> {
+    // Coordinator wins precedence so an admin who happens to also be a
+    // driver/client gets the coord menu.
+    const admin = await this.admins.findOne({
+      where: { walletTelegramId: String(chatId) as any },
+    });
+    if (admin) return { role: 'coordinator', id: admin.id };
     const driver = await this.drivers.findOne({
       where: { walletTelegramId: String(chatId) as any },
     });
@@ -98,6 +108,30 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     });
     if (client) return { role: 'client', id: client.id };
     return null;
+  }
+
+  private async linkCoordinator(adminId: string, chatId: number) {
+    await this.admins
+      .createQueryBuilder()
+      .update(Admin)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.drivers
+      .createQueryBuilder()
+      .update(Driver)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.clients
+      .createQueryBuilder()
+      .update(Client)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
+    await this.admins.update(adminId, {
+      walletTelegramId: String(chatId) as any,
+    });
   }
 
   private async linkDriver(driverId: string, chatId: number) {
@@ -157,6 +191,7 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     );
 
     bot.hears('💰 Balans', async (ctx) => this.handleBalance(ctx));
+    bot.hears('💰 Hamyon', async (ctx) => this.handleBalance(ctx));
     bot.hears('📤 Pul yechish', async (ctx) =>
       this.beginFlow(ctx, 'withdraw'),
     );
@@ -167,8 +202,16 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       this.beginFlow(ctx, 'topup'),
     );
     bot.hears('📋 So‘rovlar tarixi', async (ctx) => this.handleHistory(ctx));
+    bot.hears('🔔 Kutilayotgan so‘rovlar', async (ctx) =>
+      this.handleCoordPending(ctx),
+    );
     bot.hears('❌ Bekor qilish', async (ctx) => this.cancelFlow(ctx));
     bot.hears('🚪 Chiqish', async (ctx) => this.handleLogout(ctx));
+
+    // Inline approve/reject callbacks from coordinator DMs.
+    bot.action(/^pr:(approve|reject):([0-9a-f-]+)$/i, async (ctx) =>
+      this.handleDecisionCallback(ctx),
+    );
 
     bot.on('text', async (ctx) => this.handleText(ctx));
 
@@ -183,6 +226,34 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   private async handleStart(ctx: Context) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
+
+    // /start co<hex>  — coordinator deep link (issued from admin panel).
+    const startText = ((ctx.message as any)?.text ?? '') as string;
+    const payload = startText.split(/\s+/)[1]?.trim();
+    if (payload && payload.startsWith('co')) {
+      const adminId = this.links.redeem(payload);
+      if (!adminId) {
+        await ctx.reply(
+          '❌ Bog‘lash havolasi muddati o‘tgan yoki noto‘g‘ri.\n' +
+            'Koordinator panelidan yangi havola oling.',
+        );
+        return;
+      }
+      const admin = await this.admins.findOne({ where: { id: adminId } });
+      if (!admin) {
+        await ctx.reply('Koordinator topilmadi.');
+        return;
+      }
+      await this.linkCoordinator(adminId, chatId);
+      await ctx.reply(
+        `✅ Salom, <b>${admin.username}</b>!\n` +
+          `Koordinator hisobingiz ulandi.\n\n` +
+          `💰 Hamyon: <b>${this.fmt(admin.balance)} so‘m</b>`,
+        { parse_mode: 'HTML', ...this.mainKeyboard('coordinator') },
+      );
+      return;
+    }
+
     const linked = await this.findLinked(chatId);
     if (linked) {
       const name = await this.displayName(linked);
@@ -193,7 +264,8 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await ctx.reply(
-      'Salom! 👋\nWallet hisobingizga kirish uchun ro‘yxatdan o‘tgan telefon raqamingizni yuboring.',
+      'Salom! 👋\nWallet hisobingizga kirish uchun ro‘yxatdan o‘tgan telefon raqamingizni yuboring.\n\n' +
+        'Koordinator bo‘lsangiz, admin panelidan bog‘lash havolasini oling.',
       Markup.keyboard([
         Markup.button.contactRequest('📞 Telefon raqamni yuborish'),
       ])
@@ -327,10 +399,101 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     const linked = await this.findLinked(chatId);
     if (!linked) return this.askLogin(ctx);
     const balance = await this.balanceOf(linked);
+    const label = linked.role === 'coordinator' ? 'Hamyon' : 'Balans';
     await ctx.reply(
-      `💰 <b>Balans:</b> ${this.fmt(balance)} so‘m`,
+      `💰 <b>${label}:</b> ${this.fmt(balance)} so‘m`,
       { parse_mode: 'HTML', ...this.mainKeyboard(linked.role) },
     );
+  }
+
+  /**
+   * Coordinator-only: list bot-initiated pending requests with inline
+   * Approve / Reject buttons. Same queue admin and the /coordinator/pending
+   * panel see.
+   */
+  private async handleCoordPending(ctx: Context) {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const linked = await this.findLinked(chatId);
+    if (!linked || linked.role !== 'coordinator') return this.askLogin(ctx);
+    const rows = await this.payment.listPendingForCoordinator(20);
+    if (!rows.length) {
+      await ctx.reply(
+        '✅ Yangi so‘rov yo‘q.',
+        this.mainKeyboard('coordinator'),
+      );
+      return;
+    }
+    for (const r of rows) {
+      await ctx.reply(this.pendingCardText(r), {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('✅ Tasdiqlash', `pr:approve:${r.id}`),
+            Markup.button.callback('❌ Rad etish', `pr:reject:${r.id}`),
+          ],
+        ]),
+      });
+    }
+  }
+
+  private pendingCardText(r: any): string {
+    const amt = Number(r.amount);
+    const sign = amt >= 0 ? '+' : '';
+    const who =
+      r.driverId
+        ? `🚗 ${r.driver?.fullName ?? 'Haydovchi'} (${r.driver?.phone ?? ''})`
+        : `👤 ${r.client?.firstName ?? 'Klient'} (${r.client?.phonePrimary ?? ''})`;
+    const date = new Date(r.createdAt).toLocaleString('uz', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return (
+      `<b>Yangi so‘rov</b>\n\n` +
+      `${who}\n` +
+      `Summa: <b>${sign}${this.fmt(amt)} so‘m</b>\n` +
+      (r.note ? `Izoh: ${r.note}\n` : '') +
+      `Vaqt: ${date}`
+    );
+  }
+
+  private async handleDecisionCallback(ctx: Context) {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const linked = await this.findLinked(chatId);
+    if (!linked || linked.role !== 'coordinator') {
+      await (ctx as any).answerCbQuery?.('Faqat koordinator amal qila oladi');
+      return;
+    }
+    const match = (ctx as any).match as RegExpExecArray;
+    const action = match[1];
+    const id = match[2];
+    try {
+      if (action === 'approve') {
+        await this.payment.approve(id, linked.id);
+      } else {
+        await this.payment.reject(id, linked.id);
+      }
+      await (ctx as any).answerCbQuery?.(
+        action === 'approve' ? '✅ Tasdiqlandi' : '❌ Rad etildi',
+      );
+      // Strip the inline buttons and append the verdict line.
+      const original = (ctx.callbackQuery as any)?.message?.text ?? '';
+      const verdict = action === 'approve' ? '✅ TASDIQLANDI' : '❌ RAD ETILDI';
+      try {
+        await (ctx as any).editMessageText(
+          `${original}\n\n<b>${verdict}</b>`,
+          { parse_mode: 'HTML' },
+        );
+      } catch {
+        // editMessageText fails if the message can't be edited; ignore.
+      }
+    } catch (e: any) {
+      const msg = e?.response?.message ?? e?.message ?? 'Xato';
+      await (ctx as any).answerCbQuery?.(`❌ ${msg}`, { show_alert: true });
+    }
   }
 
   private async showMenu(ctx: Context) {
@@ -349,7 +512,9 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     const rows =
       linked.role === 'driver'
         ? await this.payment.listByDriver(linked.id, 10)
-        : await this.payment.listByClient(linked.id, 10);
+        : linked.role === 'client'
+          ? await this.payment.listByClient(linked.id, 10)
+          : await this.payment.listOwn(linked.id, 10);
     if (!rows.length) {
       await ctx.reply(
         '📋 So‘rovlar tarixi bo‘sh.',
@@ -439,6 +604,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       .set({ walletTelegramId: null as any })
       .where('wallet_telegram_id = :cid', { cid: String(chatId) })
       .execute();
+    await this.admins
+      .createQueryBuilder()
+      .update(Admin)
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(chatId) })
+      .execute();
     this.fsm.delete(chatId);
     this.pendingRoleChoice.delete(chatId);
     await ctx.reply(
@@ -457,10 +628,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     // Skip menu button labels that fell through the hears() handlers.
     if (
       text === '💰 Balans' ||
+      text === '💰 Hamyon' ||
       text === '📤 Pul yechish' ||
       text === '📥 Pul tashlash' ||
       text === '📥 Hisobni to‘ldirish' ||
       text === '📋 So‘rovlar tarixi' ||
+      text === '🔔 Kutilayotgan so‘rovlar' ||
       text === '❌ Bekor qilish' ||
       text === '🚪 Chiqish' ||
       text === '🚗 Haydovchi' ||
@@ -553,6 +726,81 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
   private subscribeToPaymentEvents() {
     this.events.on('payment.approved', (p) => this.notifyDecision(p, true));
     this.events.on('payment.rejected', (p) => this.notifyDecision(p, false));
+    this.events.on('payment.submitted', (p) => this.notifyCoordsOfNew(p));
+  }
+
+  /**
+   * Fan-out new pending requests to every coordinator linked to the
+   * wallet bot. Each gets an inline approve/reject card. The first
+   * coordinator (or admin in the panel) to act wins — the other
+   * coordinator's tap will surface a "already decided" error via the
+   * existing PaymentService guards.
+   */
+  private async notifyCoordsOfNew(payload: PaymentEventPayload) {
+    try {
+      if (!this.bot) return;
+      // Only bot-initiated requests (driver/client self-submits) need
+      // coordinator review. Skip admin/coord-initiated rows so we don't
+      // ping the coordinator about their own action.
+      if (
+        !payload.request.requestedByDriver &&
+        !payload.request.requestedByClient
+      ) {
+        return;
+      }
+      const coords = await this.admins
+        .createQueryBuilder('a')
+        .where("a.role = 'coordinator'")
+        .andWhere('a.wallet_telegram_id IS NOT NULL')
+        .getMany();
+      if (!coords.length) return;
+      // Hydrate driver/client for the card.
+      const enriched = {
+        ...payload.request,
+        driver: payload.request.driverId
+          ? await this.drivers.findOne({
+              where: { id: payload.request.driverId },
+            })
+          : null,
+        client: payload.request.clientId
+          ? await this.clients.findOne({
+              where: { id: payload.request.clientId },
+            })
+          : null,
+      } as any;
+      for (const c of coords) {
+        const chatId = Number(c.walletTelegramId);
+        if (!Number.isFinite(chatId)) continue;
+        try {
+          await this.bot.telegram.sendMessage(
+            chatId,
+            this.pendingCardText(enriched),
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([
+                [
+                  Markup.button.callback(
+                    '✅ Tasdiqlash',
+                    `pr:approve:${payload.request.id}`,
+                  ),
+                  Markup.button.callback(
+                    '❌ Rad etish',
+                    `pr:reject:${payload.request.id}`,
+                  ),
+                ],
+              ]),
+            },
+          );
+        } catch (e) {
+          // Per-coord delivery failure shouldn't break the fan-out.
+          this.logger.warn(
+            `notifyCoords failed for ${c.id}: ${(e as any)?.message ?? e}`,
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.error('notifyCoordsOfNew failed', e as any);
+    }
   }
 
   private async notifyDecision(
@@ -619,6 +867,13 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
         ['🚪 Chiqish'],
       ]).resize();
     }
+    if (role === 'coordinator') {
+      return Markup.keyboard([
+        ['💰 Hamyon', '🔔 Kutilayotgan so‘rovlar'],
+        ['📋 So‘rovlar tarixi'],
+        ['🚪 Chiqish'],
+      ]).resize();
+    }
     return Markup.keyboard([
       ['💰 Balans', '📥 Hisobni to‘ldirish'],
       ['📋 So‘rovlar tarixi'],
@@ -631,6 +886,10 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       const d = await this.drivers.findOne({ where: { id: linked.id } });
       return d?.fullName ?? 'Haydovchi';
     }
+    if (linked.role === 'coordinator') {
+      const a = await this.admins.findOne({ where: { id: linked.id } });
+      return a?.username ?? 'Koordinator';
+    }
     const c = await this.clients.findOne({ where: { id: linked.id } });
     return c?.firstName ?? 'Klient';
   }
@@ -639,6 +898,10 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     if (linked.role === 'driver') {
       const d = await this.drivers.findOne({ where: { id: linked.id } });
       return d?.balance ?? '0';
+    }
+    if (linked.role === 'coordinator') {
+      const a = await this.admins.findOne({ where: { id: linked.id } });
+      return a?.balance ?? '0';
     }
     const c = await this.clients.findOne({ where: { id: linked.id } });
     return c?.balance ?? '0';

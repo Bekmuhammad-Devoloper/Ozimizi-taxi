@@ -35,6 +35,7 @@ import { BotModule } from './modules/bot/bot.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { GatewaysModule } from './modules/realtime/gateways.module';
 import { WalletBotModule } from './modules/wallet-bot/wallet-bot.module';
+import { WalletBotLinkModule } from './modules/wallet-bot/wallet-bot-link.service';
 import { FeedbackBotModule } from './modules/feedback-bot/feedback-bot.module';
 
 function isRealTelegramToken(t: string | undefined): boolean {
@@ -107,6 +108,7 @@ const feedbackBotImports: DynamicModule['imports'] = isRealTelegramToken(
     SettingsModule,
     PaymentModule,
     FeedbackModule,
+    WalletBotLinkModule,
     RealtimeModule,
     AuthModule,
     ClientModule,

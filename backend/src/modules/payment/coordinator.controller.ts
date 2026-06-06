@@ -16,10 +16,12 @@ import {
   CurrentUser,
   JwtPayload,
 } from '../../common/decorators/current-user.decorator';
+import { ConfigService } from '@nestjs/config';
 import { PaymentService } from './payment.service';
 import { Admin } from '../admin/admin.entity';
 import { BalanceService } from '../balance/balance.service';
 import { BalanceTxType } from '../balance/balance-transaction.entity';
+import { WalletBotLinkService } from '../wallet-bot/wallet-bot-link.service';
 
 /**
  * Coordinator-only API. Coordinators are a super-admin-lite role: they can
@@ -36,6 +38,8 @@ export class CoordinatorController {
   constructor(
     private readonly payment: PaymentService,
     private readonly balance: BalanceService,
+    private readonly links: WalletBotLinkService,
+    private readonly config: ConfigService,
     @InjectRepository(Admin) private readonly admins: Repository<Admin>,
   ) {}
 
@@ -48,8 +52,32 @@ export class CoordinatorController {
           username: a.username,
           role: a.role,
           balance: a.balance,
+          walletBotLinked: !!a.walletTelegramId,
         }
       : null;
+  }
+
+  /**
+   * Issue a one-time deep-link token so the coordinator can connect
+   * their wallet bot chat. Returns { url, token, expiresInSeconds }.
+   * The bot's /start handler redeems the token and binds the chat.
+   */
+  @Post('wallet-link')
+  walletLink(@CurrentUser() user: JwtPayload) {
+    const token = this.links.issue(user.sub);
+    const username =
+      this.config.get<string>('WALLET_BOT_USERNAME') ?? 'OzimizniWaltbot';
+    return {
+      token,
+      url: `https://t.me/${username}?start=${token}`,
+      expiresInSeconds: 600,
+    };
+  }
+
+  @Post('wallet-unlink')
+  async walletUnlink(@CurrentUser() user: JwtPayload) {
+    await this.admins.update(user.sub, { walletTelegramId: null });
+    return { ok: true };
   }
 
   /**

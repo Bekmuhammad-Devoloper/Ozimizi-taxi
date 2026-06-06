@@ -29,6 +29,17 @@ export class Admin {
   @Column({ type: 'numeric', precision: 14, scale: 2, default: 0 })
   balance: string;
 
+  // Set when the coordinator (or admin) deep-links @ozimizitaxi_walletbot.
+  // The bot DMs them new pending requests and accepts inline
+  // approve/reject taps.
+  @Index({ unique: true, where: 'wallet_telegram_id IS NOT NULL' })
+  @Column({
+    name: 'wallet_telegram_id',
+    type: 'bigint',
+    nullable: true,
+  })
+  walletTelegramId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

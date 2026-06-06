@@ -13,6 +13,9 @@ import {
   Wallet,
   Car as CarIcon,
   User as UserIcon,
+  Link2,
+  Link2Off,
+  MessageSquare,
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
@@ -61,11 +64,33 @@ export default function CoordinatorPage() {
     queryKey: ['coordinator', 'me'],
     queryFn: async () =>
       (
-        await api.get<{ id: string; username: string; balance: string }>(
-          '/coordinator/me',
-        )
+        await api.get<{
+          id: string;
+          username: string;
+          balance: string;
+          walletBotLinked: boolean;
+        }>('/coordinator/me')
       ).data,
     refetchInterval: 15_000,
+  });
+
+  const linkWallet = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<{ url: string; expiresInSeconds: number }>(
+          '/coordinator/wallet-link',
+        )
+      ).data,
+    onSuccess: (data) => {
+      window.open(data.url, '_blank', 'noopener');
+    },
+  });
+
+  const unlinkWallet = useMutation({
+    mutationFn: async () =>
+      (await api.post('/coordinator/wallet-unlink')).data,
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['coordinator', 'me'] }),
   });
 
   const { data: drivers } = useQuery({
@@ -211,6 +236,34 @@ export default function CoordinatorPage() {
     <Shell
       title="To‘lov yuborish"
       subtitle="O‘zingizga ajratilgan hamyondan haydovchi yoki klientga to‘g‘ridan-to‘g‘ri o‘tkazish"
+      actions={
+        me?.walletBotLinked ? (
+          <button
+            onClick={() => {
+              if (
+                confirm(
+                  'Wallet bot ulanishi o‘chirilsinmi? Yangi so‘rovlar Telegram orqali kelmaydi.',
+                )
+              )
+                unlinkWallet.mutate();
+            }}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-line text-xs font-bold text-neutral-600 hover:bg-neutral-50"
+            title="Wallet bot bog‘lanishi faol"
+          >
+            <Link2Off size={14} /> Wallet bot ulangan
+          </button>
+        ) : (
+          <button
+            onClick={() => linkWallet.mutate()}
+            disabled={linkWallet.isPending}
+            className="btn-primary"
+            title="Telegram wallet bot orqali so‘rovlarni boshqarish"
+          >
+            <Link2 size={14} />{' '}
+            {linkWallet.isPending ? 'Ochilmoqda…' : 'Wallet bot bilan ulanish'}
+          </button>
+        )
+      }
     >
       {/* KPI ROW */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
