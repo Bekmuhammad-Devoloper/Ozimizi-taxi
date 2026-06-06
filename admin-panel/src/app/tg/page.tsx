@@ -29,48 +29,81 @@ export default function TelegramEntryPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Telegram's in-app browser sometimes attaches window.Telegram.WebApp
-    // a tick after the document has mounted (especially on desktop). Poll
-    // for up to 3s before we give up.
     let cancelled = false;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 30;
-    const POLL_MS = 100;
 
-    const tick = () => {
+    const runAuthOnce = () => {
       if (cancelled) return;
-      const tg = (window as any).Telegram?.WebApp;
-      const hasData = tg && tg.initData && tg.initData.length > 0;
-      if (hasData) {
-        try {
-          tg.ready?.();
-          tg.expand?.();
-        } catch {
-          /* ignore */
+      let attempts = 0;
+      const MAX_ATTEMPTS = 50; // 5s total
+      const POLL_MS = 100;
+      const tick = () => {
+        if (cancelled) return;
+        const tg = (window as any).Telegram?.WebApp;
+        const hasData = tg && tg.initData && tg.initData.length > 0;
+        if (hasData) {
+          try {
+            tg.ready?.();
+            tg.expand?.();
+          } catch {
+            /* ignore */
+          }
+          setInitData(tg.initData);
+          setStage('authing');
+          api
+            .post('/auth/telegram-webapp', { initData: tg.initData })
+            .then(({ data }) => {
+              Cookies.set('admin_token', data.access_token, { expires: 7 });
+              window.location.replace(
+                data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
+              );
+            })
+            .catch(() => {
+              setStage('needsLogin');
+            });
+          return;
         }
-        setInitData(tg.initData);
-        setStage('authing');
-        api
-          .post('/auth/telegram-webapp', { initData: tg.initData })
-          .then(({ data }) => {
-            Cookies.set('admin_token', data.access_token, { expires: 7 });
-            window.location.replace(
-              data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
-            );
-          })
-          .catch(() => {
-            setStage('needsLogin');
-          });
-        return;
-      }
-      attempts++;
-      if (attempts >= MAX_ATTEMPTS) {
-        setStage('noWebApp');
-        return;
-      }
-      window.setTimeout(tick, POLL_MS);
+        attempts++;
+        if (attempts >= MAX_ATTEMPTS) {
+          setStage('noWebApp');
+          return;
+        }
+        window.setTimeout(tick, POLL_MS);
+      };
+      tick();
     };
-    tick();
+
+    // Telegram's in-app browser doesn't always honor a <script> tag we
+    // emit at SSR — sometimes the script never reaches the head when
+    // the page is opened via a keyboard WebApp button. Inject it from
+    // here as a fallback and wait for onload before polling.
+    if ((window as any).Telegram?.WebApp) {
+      runAuthOnce();
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-tg-webapp]',
+    );
+    if (existing) {
+      existing.addEventListener('load', runAuthOnce, { once: true });
+      // It may have already loaded but Telegram never populated the
+      // object — still try the poll loop.
+      runAuthOnce();
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://telegram.org/js/telegram-web-app.js';
+      s.async = false;
+      s.dataset.tgWebapp = 'true';
+      s.addEventListener('load', runAuthOnce, { once: true });
+      s.addEventListener(
+        'error',
+        () => {
+          if (!cancelled) setStage('noWebApp');
+        },
+        { once: true },
+      );
+      document.head.appendChild(s);
+    }
     return () => {
       cancelled = true;
     };
