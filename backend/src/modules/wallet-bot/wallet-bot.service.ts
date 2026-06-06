@@ -868,10 +868,17 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       ]).resize();
     }
     if (role === 'coordinator') {
+      // Coordinator workspace lives inside a Telegram Mini App so the
+      // full UI (purse balance, pending queue, transfer form, history)
+      // is reachable with one tap. Plain text menu items are kept as
+      // fallbacks for clients without WebApp support.
+      const webAppUrl =
+        this.config.get<string>('COORDINATOR_WEBAPP_URL') ??
+        'https://ozimizi-taxi.yuksalish.dev/admin/tg';
       return Markup.keyboard([
+        [Markup.button.webApp('🌐 Koordinator paneli', webAppUrl)],
         ['💰 Hamyon', '🔔 Kutilayotgan so‘rovlar'],
-        ['📋 So‘rovlar tarixi'],
-        ['🚪 Chiqish'],
+        ['📋 So‘rovlar tarixi', '🚪 Chiqish'],
       ]).resize();
     }
     return Markup.keyboard([

@@ -120,6 +120,81 @@ export class AuthService {
   }
 
   /**
+   * Validate Telegram WebApp initData and issue a JWT for the linked
+   * admin/coordinator. The bot's chat (walletTelegramId on Admin) must
+   * already be linked — this endpoint does NOT auto-create accounts.
+   *
+   * Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+   */
+  async telegramWebAppLogin(initData: string) {
+    const botToken = this.config.get<string>('WALLET_BOT_TOKEN') ?? '';
+    if (!botToken) {
+      throw new UnauthorizedException('Wallet bot is not configured');
+    }
+    if (!initData) {
+      throw new UnauthorizedException('initData missing');
+    }
+    const params = new URLSearchParams(initData);
+    const givenHash = params.get('hash');
+    if (!givenHash) {
+      throw new UnauthorizedException('initData hash missing');
+    }
+    params.delete('hash');
+    const dataCheckString = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest();
+    const computedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+    if (computedHash !== givenHash) {
+      throw new UnauthorizedException('initData signature invalid');
+    }
+    // Optional freshness check: reject initData older than 24h to mitigate
+    // replay if the chat is later unlinked.
+    const authDate = Number(params.get('auth_date'));
+    if (
+      Number.isFinite(authDate) &&
+      Date.now() / 1000 - authDate > 24 * 60 * 60
+    ) {
+      throw new UnauthorizedException('initData expired');
+    }
+
+    let user: any = {};
+    try {
+      user = JSON.parse(params.get('user') ?? '{}');
+    } catch {
+      throw new UnauthorizedException('initData user payload invalid');
+    }
+    const tgId = user?.id;
+    if (!tgId) throw new UnauthorizedException('initData has no user id');
+
+    const admin = await this.admins.findOne({
+      where: { walletTelegramId: String(tgId) as any },
+    });
+    if (!admin) {
+      throw new UnauthorizedException(
+        'Akkaunt bog‘lanmagan. Koordinator panelidan wallet botni ulang.',
+      );
+    }
+    const role = (admin.role ?? 'admin') as 'admin' | 'coordinator';
+    const payload: JwtPayload = {
+      sub: admin.id,
+      role,
+      username: admin.username,
+    };
+    return {
+      access_token: await this.jwt.signAsync(payload),
+      admin: { id: admin.id, username: admin.username, role },
+    };
+  }
+
+  /**
    * Forgot password: generate 6-digit code, send via email if driver has one,
    * also log to backend console (dev fallback for SMS gateway).
    * Returns { ok: true } regardless to avoid leaking phone enumeration.

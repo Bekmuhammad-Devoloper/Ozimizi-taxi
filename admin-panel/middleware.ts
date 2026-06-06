@@ -22,6 +22,9 @@ export function middleware(req: NextRequest) {
   const token = req.cookies.get('admin_token')?.value;
   const path = req.nextUrl.pathname;
   const isLogin = path === '/login';
+  // Telegram Mini App entry — must be reachable without a cookie so the
+  // page can exchange initData for a JWT.
+  const isTelegramEntry = path === '/tg' || path.startsWith('/tg/');
   // Coordinator workspace lives at /coordinator (singular). The admin-only
   // /coordinators page (plural — manages coordinator accounts) must NOT
   // match, hence the boundary check.
@@ -35,7 +38,7 @@ export function middleware(req: NextRequest) {
     (payload.role === 'admin' || payload.role === 'coordinator');
 
   if (!isAuthed) {
-    if (isLogin) return NextResponse.next();
+    if (isLogin || isTelegramEntry) return NextResponse.next();
     return NextResponse.redirect(new URL('/login', req.url));
   }
 

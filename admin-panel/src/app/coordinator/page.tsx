@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { useTelegramWebApp } from '@/hooks/useTelegramWebApp';
 
 interface DriverLite {
   id: string;
@@ -51,6 +52,8 @@ type TargetType = 'driver' | 'client';
 
 export default function CoordinatorPage() {
   const qc = useQueryClient();
+  // Mini-App auto-login. Outside Telegram this is a no-op.
+  const tgWebApp = useTelegramWebApp();
   const [target, setTarget] = useState<TargetType>('driver');
   const [mode, setMode] = useState<'topup' | 'withdraw'>('topup');
   const [selectedId, setSelectedId] = useState('');
@@ -265,6 +268,17 @@ export default function CoordinatorPage() {
         )
       }
     >
+      {tgWebApp.state === 'authing' && (
+        <div className="card p-3 mb-3 text-xs text-neutral-500">
+          Telegram orqali kirilmoqda…
+        </div>
+      )}
+      {tgWebApp.state === 'error' && (
+        <div className="card p-3 mb-3 text-xs text-red-700 bg-red-50 border-red-200">
+          ❌ {tgWebApp.error}
+        </div>
+      )}
+
       {/* KPI ROW */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <Kpi

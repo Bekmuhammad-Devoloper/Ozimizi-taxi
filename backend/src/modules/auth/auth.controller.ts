@@ -36,4 +36,15 @@ export class AuthController {
   driverReset(@Body() dto: ResetPasswordDto) {
     return this.auth.resetDriverPassword(dto.phone, dto.code, dto.newPassword);
   }
+
+  /**
+   * Telegram Mini App login. The admin-panel sends Telegram.WebApp.initData
+   * on first mount inside the bot — backend HMACs it against the wallet
+   * bot token and issues a normal admin/coordinator JWT.
+   */
+  @HttpCode(200)
+  @Post('telegram-webapp')
+  telegramWebApp(@Body() body: { initData: string }) {
+    return this.auth.telegramWebAppLogin(body?.initData ?? '');
+  }
 }
