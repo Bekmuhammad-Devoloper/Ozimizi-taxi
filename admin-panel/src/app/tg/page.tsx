@@ -28,35 +28,52 @@ export default function TelegramEntryPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const tg = (window as any).Telegram?.WebApp;
-    if (!tg) {
-      setStage('noWebApp');
-      return;
-    }
-    try {
-      tg.ready?.();
-      tg.expand?.();
-    } catch {
-      /* ignore */
-    }
-    if (!tg.initData) {
-      setStage('noWebApp');
-      return;
-    }
-    setInitData(tg.initData);
-    setStage('authing');
-    api
-      .post('/auth/telegram-webapp', { initData: tg.initData })
-      .then(({ data }) => {
-        Cookies.set('admin_token', data.access_token, { expires: 7 });
-        window.location.replace(
-          data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
-        );
-      })
-      .catch(() => {
-        // Most common case: chat not linked yet — show login form.
-        setStage('needsLogin');
-      });
+
+    // Telegram's in-app browser sometimes attaches window.Telegram.WebApp
+    // a tick after the document has mounted (especially on desktop). Poll
+    // for up to 3s before we give up.
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 30;
+    const POLL_MS = 100;
+
+    const tick = () => {
+      if (cancelled) return;
+      const tg = (window as any).Telegram?.WebApp;
+      const hasData = tg && tg.initData && tg.initData.length > 0;
+      if (hasData) {
+        try {
+          tg.ready?.();
+          tg.expand?.();
+        } catch {
+          /* ignore */
+        }
+        setInitData(tg.initData);
+        setStage('authing');
+        api
+          .post('/auth/telegram-webapp', { initData: tg.initData })
+          .then(({ data }) => {
+            Cookies.set('admin_token', data.access_token, { expires: 7 });
+            window.location.replace(
+              data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
+            );
+          })
+          .catch(() => {
+            setStage('needsLogin');
+          });
+        return;
+      }
+      attempts++;
+      if (attempts >= MAX_ATTEMPTS) {
+        setStage('noWebApp');
+        return;
+      }
+      window.setTimeout(tick, POLL_MS);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const onLogin = async (e: React.FormEvent) => {

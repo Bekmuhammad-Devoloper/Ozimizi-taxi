@@ -1,4 +1,3 @@
-import Script from 'next/script';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 
@@ -13,14 +12,19 @@ export default function RootLayout({
 }) {
   return (
     <html lang="uz">
-      <body>
-        {/* Telegram Mini App runtime — populates window.Telegram.WebApp
-            when the panel is opened inside the wallet bot. Harmless
-            outside Telegram (script just sets up the shim). */}
-        <Script
+      <head>
+        {/* Telegram Mini App runtime. MUST load before React mounts so
+            window.Telegram.WebApp + initData are ready in the /tg page's
+            useEffect. next/script with strategy="beforeInteractive" was
+            firing too late inside Telegram's in-app browser; a plain
+            blocking <script> tag in <head> avoids the race entirely.
+            Outside Telegram the file just sets up an inert shim. */}
+        <script
           src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
+          async={false}
         />
+      </head>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>
