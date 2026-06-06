@@ -129,10 +129,13 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+    // Not linked yet — still surface the Mini App button. The Mini App
+    // handles the username/password login itself and binds the chat on
+    // success.
     await ctx.reply(
-      'Bu bot faqat koordinatorlar uchun ishlaydi.\n\n' +
-        'Koordinator panelida "Wallet bot bilan ulanish" tugmasini bosing — sizga bog‘lash havolasi keladi.',
-      Markup.removeKeyboard(),
+      'Salom! 👋\nBu bot koordinatorlar uchun.\n\n' +
+        'Quyidagi tugma orqali panelni oching va akkountingizga kiring — chat avtomatik ulanadi.',
+      this.mainKeyboard(),
     );
   }
 

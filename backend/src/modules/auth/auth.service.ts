@@ -127,18 +127,80 @@ export class AuthService {
    * Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
    */
   async telegramWebAppLogin(initData: string) {
+    const tgId = await this.verifyInitDataAndGetUserId(initData);
+    const admin = await this.admins.findOne({
+      where: { walletTelegramId: String(tgId) as any },
+    });
+    if (!admin) {
+      throw new UnauthorizedException(
+        'Akkaunt bog‘lanmagan. Username/parolingiz bilan kiring — chat avtomatik ulanadi.',
+      );
+    }
+    const role = (admin.role ?? 'admin') as 'admin' | 'coordinator';
+    const payload: JwtPayload = {
+      sub: admin.id,
+      role,
+      username: admin.username,
+    };
+    return {
+      access_token: await this.jwt.signAsync(payload),
+      admin: { id: admin.id, username: admin.username, role },
+    };
+  }
+
+  /**
+   * First-time Telegram Mini App link: HMAC-check initData, then verify
+   * the admin/coordinator credentials, then bind the wallet bot chat to
+   * that admin and issue a JWT. After this call subsequent visits use
+   * telegramWebAppLogin (no creds required).
+   */
+  async telegramWebAppLink(input: {
+    initData: string;
+    username: string;
+    password: string;
+  }) {
+    const tgId = await this.verifyInitDataAndGetUserId(input.initData);
+    const admin = await this.admins.findOne({
+      where: { username: input.username },
+    });
+    if (!admin) throw new UnauthorizedException('Username yoki parol noto‘g‘ri');
+    const ok = await bcrypt.compare(input.password, admin.passwordHash);
+    if (!ok) throw new UnauthorizedException('Username yoki parol noto‘g‘ri');
+
+    // Detach any other admin row that previously had this chat — keeps
+    // the unique partial index happy.
+    await this.admins
+      .createQueryBuilder()
+      .update()
+      .set({ walletTelegramId: null as any })
+      .where('wallet_telegram_id = :cid', { cid: String(tgId) })
+      .execute();
+    await this.admins.update(admin.id, {
+      walletTelegramId: String(tgId) as any,
+    });
+
+    const role = (admin.role ?? 'admin') as 'admin' | 'coordinator';
+    const payload: JwtPayload = {
+      sub: admin.id,
+      role,
+      username: admin.username,
+    };
+    return {
+      access_token: await this.jwt.signAsync(payload),
+      admin: { id: admin.id, username: admin.username, role },
+    };
+  }
+
+  /** Pulled out for reuse between login and link. */
+  private async verifyInitDataAndGetUserId(initData: string): Promise<number> {
     const botToken = this.config.get<string>('WALLET_BOT_TOKEN') ?? '';
     if (!botToken) {
       throw new UnauthorizedException('Wallet bot is not configured');
     }
-    if (!initData) {
-      throw new UnauthorizedException('initData missing');
-    }
+    if (!initData) throw new UnauthorizedException('initData missing');
     const params = new URLSearchParams(initData);
     const givenHash = params.get('hash');
-    if (!givenHash) {
-      throw new UnauthorizedException('initData hash missing');
-    }
+    if (!givenHash) throw new UnauthorizedException('initData hash missing');
     params.delete('hash');
     const dataCheckString = [...params.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -155,8 +217,6 @@ export class AuthService {
     if (computedHash !== givenHash) {
       throw new UnauthorizedException('initData signature invalid');
     }
-    // Optional freshness check: reject initData older than 24h to mitigate
-    // replay if the chat is later unlinked.
     const authDate = Number(params.get('auth_date'));
     if (
       Number.isFinite(authDate) &&
@@ -164,34 +224,17 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('initData expired');
     }
-
     let user: any = {};
     try {
       user = JSON.parse(params.get('user') ?? '{}');
     } catch {
       throw new UnauthorizedException('initData user payload invalid');
     }
-    const tgId = user?.id;
-    if (!tgId) throw new UnauthorizedException('initData has no user id');
-
-    const admin = await this.admins.findOne({
-      where: { walletTelegramId: String(tgId) as any },
-    });
-    if (!admin) {
-      throw new UnauthorizedException(
-        'Akkaunt bog‘lanmagan. Koordinator panelidan wallet botni ulang.',
-      );
+    const tgId = Number(user?.id);
+    if (!Number.isFinite(tgId)) {
+      throw new UnauthorizedException('initData has no user id');
     }
-    const role = (admin.role ?? 'admin') as 'admin' | 'coordinator';
-    const payload: JwtPayload = {
-      sub: admin.id,
-      role,
-      username: admin.username,
-    };
-    return {
-      access_token: await this.jwt.signAsync(payload),
-      admin: { id: admin.id, username: admin.username, role },
-    };
+    return tgId;
   }
 
   /**

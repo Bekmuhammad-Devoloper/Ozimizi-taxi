@@ -47,4 +47,21 @@ export class AuthController {
   telegramWebApp(@Body() body: { initData: string }) {
     return this.auth.telegramWebAppLogin(body?.initData ?? '');
   }
+
+  /**
+   * First-time Mini App login: verify Telegram initData AND admin
+   * username/password, then bind the wallet bot chat to that admin.
+   */
+  @HttpCode(200)
+  @Post('telegram-webapp/link')
+  telegramWebAppLink(
+    @Body()
+    body: { initData: string; username: string; password: string },
+  ) {
+    return this.auth.telegramWebAppLink({
+      initData: body?.initData ?? '',
+      username: body?.username ?? '',
+      password: body?.password ?? '',
+    });
+  }
 }
