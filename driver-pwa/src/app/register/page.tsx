@@ -6,6 +6,7 @@ import { Eye, EyeOff, User, Phone, Lock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { AuthShell } from '@/components/AuthShell';
+import { ContractSheet } from '@/components/ContractText';
 
 function maskPhone(raw: string) {
   const digits = raw.replace(/\D/g, '').slice(0, 12);
@@ -29,6 +30,8 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [agree, setAgree] = useState(false);
+  const [showContract, setShowContract] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -51,12 +54,17 @@ export default function RegisterPage() {
       setError('Parollar mos kelmadi');
       return;
     }
+    if (!agree) {
+      setError('Shartnoma shartlariga rozilik bildiring');
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.post('/auth/driver/register', {
         fullName: fullName.trim(),
         phone: cleanPhone,
         password,
+        contractAccepted: true,
       });
       setAuth(data.access_token, data.driver);
       // Self-registration always lands on /pending; the page polls until
@@ -135,6 +143,25 @@ export default function RegisterPage() {
             </div>
           </Field>
 
+          <label className="flex items-start gap-3 text-sm rounded-xl border border-line bg-neutral-50 p-3">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+              className="mt-0.5 w-5 h-5 accent-[#3b9bff]"
+            />
+            <span>
+              <b>Haydovchi shartnomasi</b> shartlari bilan tanishdim va roziman.{' '}
+              <button
+                type="button"
+                onClick={() => setShowContract(true)}
+                className="text-blue-700 font-semibold underline"
+              >
+                Shartnomani o‘qish
+              </button>
+            </span>
+          </label>
+
           {error && (
             <div className="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm p-3">
               {error}
@@ -145,8 +172,8 @@ export default function RegisterPage() {
         <div className="mt-auto pt-8 space-y-4">
           <button
             type="submit"
-            disabled={loading}
-            className="btn-primary"
+            disabled={loading || !agree}
+            className="btn-primary disabled:opacity-50"
           >
             {loading ? 'Yaratilmoqda…' : 'Ro‘yxatdan o‘tish'}
           </button>
@@ -158,6 +185,7 @@ export default function RegisterPage() {
           </Link>
         </div>
       </form>
+      {showContract && <ContractSheet onClose={() => setShowContract(false)} />}
     </AuthShell>
   );
 }

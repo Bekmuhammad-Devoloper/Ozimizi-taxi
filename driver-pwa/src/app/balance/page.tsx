@@ -4,12 +4,22 @@ import { useRouter } from 'next/navigation';
 import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { fmtDateTime } from '@/lib/date';
 
 interface BalanceTx {
   id: string;
   amount: string;
   type: string;
   note: string | null;
+  orderId?: string | null;
+  createdAt: string;
+}
+
+interface HistoryOrder {
+  status: string;
+  price: string | null;
+  commission: string | null;
+  completedAt: string | null;
   createdAt: string;
 }
 
@@ -26,6 +36,7 @@ function Inner() {
   const [balance, setBalance] = useState<string>('0');
   const [txs, setTxs] = useState<BalanceTx[]>([]);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<HistoryOrder[]>([]);
 
   useEffect(() => {
     api
@@ -35,9 +46,14 @@ function Inner() {
         setTxs(r.data.transactions);
       })
       .finally(() => setLoading(false));
+    api
+      .get<HistoryOrder[]>('/driver/orders/history')
+      .then((r) => setHistory(r.data))
+      .catch(() => {});
   }, []);
 
-  const summary = useMemo(() => calcSummary(txs), [txs]);
+  const summary = useMemo(() => calcSummary(history), [history]);
+  const negative = Number(balance) < 0;
 
   return (
     <>
@@ -48,7 +64,7 @@ function Inner() {
           className="absolute inset-0 opacity-30 pointer-events-none"
           style={{
             background:
-              'radial-gradient(circle at 20% 100%, rgba(250,204,21,0.45), transparent 60%)',
+              'radial-gradient(circle at 20% 100%, rgba(59,155,255,0.45), transparent 60%)',
           }}
         />
         <button
@@ -64,14 +80,28 @@ function Inner() {
             Joriy balans
           </p>
         </div>
-        <p className="relative mt-3 text-5xl font-extrabold tabular-nums">
+        <p
+          className={
+            'relative mt-3 text-5xl font-extrabold tabular-nums ' +
+            (negative ? 'text-red-400' : '')
+          }
+        >
           {fmt(balance)}
         </p>
         <p className="relative text-sm text-neutral-400 mt-1">so‘m</p>
+        {negative && (
+          <p className="relative mt-3 text-xs text-red-200 bg-red-500/15 border border-red-400/30 rounded-xl px-3 py-2 leading-relaxed">
+            Balansingiz manfiy — bu buyurtmalar komissiyasidan qolgan qarz.
+            Iltimos, balansni to‘ldiring.
+          </p>
+        )}
       </header>
 
       {/* PERIOD STATS */}
       <section className="px-6 -mt-6 relative z-10">
+        <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-2 mt-8">
+          Sof daromad (naqd − komissiya)
+        </p>
         <div className="grid grid-cols-3 gap-2">
           <PeriodCard label="Bugun" value={summary.day} />
           <PeriodCard label="Hafta" value={summary.week} />
@@ -116,9 +146,9 @@ function Inner() {
                   <p className="text-xs text-neutral-500 mt-0.5">
                     {fmtDateTime(t.createdAt)}
                   </p>
-                  {t.note && (
+                  {txDetail(t) && (
                     <p className="text-xs text-neutral-500 mt-1 line-clamp-1">
-                      {t.note}
+                      {txDetail(t)}
                     </p>
                   )}
                 </div>
@@ -154,7 +184,8 @@ function PeriodCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function calcSummary(txs: BalanceTx[]) {
+/** Net earnings per period from completed rides: fare (cash) − commission. */
+function calcSummary(history: HistoryOrder[]) {
   const now = Date.now();
   const day = startOfDay();
   const week = now - 7 * 24 * 3600_000;
@@ -162,14 +193,13 @@ function calcSummary(txs: BalanceTx[]) {
   let d = 0,
     w = 0,
     m = 0;
-  for (const t of txs) {
-    if (t.type !== 'COMMISSION') continue; // earnings only
-    const at = new Date(t.createdAt).getTime();
-    const amt = Number(t.amount);
-    if (amt <= 0) continue;
-    if (at >= day) d += amt;
-    if (at >= week) w += amt;
-    if (at >= month) m += amt;
+  for (const o of history) {
+    if (o.status !== 'COMPLETED') continue;
+    const at = new Date(o.completedAt ?? o.createdAt).getTime();
+    const net = Number(o.price ?? 0) - Number(o.commission ?? 0);
+    if (at >= day) d += net;
+    if (at >= week) w += net;
+    if (at >= month) m += net;
   }
   return { day: d, week: w, month: m };
 }
@@ -180,21 +210,23 @@ function startOfDay() {
 }
 function labelTx(t: string) {
   const m: Record<string, string> = {
-    COMMISSION: 'Buyurtmadan daromad',
+    COMMISSION: 'Buyurtma komissiyasi',
     TOPUP: 'Balans to‘ldirildi',
     WITHDRAW: 'Yechib olindi',
     ADJUSTMENT: 'Tuzatish',
   };
   return m[t] ?? t;
 }
+function txDetail(t: BalanceTx): string | null {
+  if (t.orderId) {
+    const ref = `Buyurtma #${t.orderId.slice(0, 8).toUpperCase()}`;
+    if (t.type === 'ADJUSTMENT' && t.note?.startsWith('Promo')) {
+      return `${ref} · promo chegirma qaytarildi`;
+    }
+    return ref;
+  }
+  return t.note;
+}
 function fmt(v: string | number) {
   return Number(v).toLocaleString('uz');
-}
-function fmtDateTime(s: string) {
-  const d = new Date(s);
-  return (
-    d.toLocaleDateString('uz', { day: '2-digit', month: 'short' }) +
-    ' · ' +
-    d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })
-  );
 }

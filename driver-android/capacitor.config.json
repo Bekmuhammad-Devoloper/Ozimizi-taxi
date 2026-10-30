@@ -1,0 +1,21 @@
+{
+  "appId": "uz.moviytaxi.driver",
+  "appName": "Moviy Taxi Haydovchi",
+  "webDir": "www",
+  "server": {
+    "url": "https://moviytaxi.uz",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a0a0a",
+    "useLegacyBridge": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_notify",
+      "iconColor": "#3b9bff",
+      "sound": "order_alert.wav"
+    }
+  }
+}

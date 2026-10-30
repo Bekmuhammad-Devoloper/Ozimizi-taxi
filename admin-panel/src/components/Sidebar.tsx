@@ -1,5 +1,6 @@
 'use client';
 import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -16,39 +17,87 @@ import {
   Inbox,
   ShieldCheck,
   MessageSquare,
+  UserPlus,
+  Ticket,
+  Link2,
+  KeyRound,
+  Megaphone,
+  ChefHat,
+  UtensilsCrossed,
+  ClipboardList,
+  BookOpen,
+  Bike,
+  PlusCircle,
+  Smartphone,
   X,
 } from 'lucide-react';
+import { api } from '@/lib/api';
+import { som, type KitchenWallet } from '@/lib/food';
+import { getAdminSocket } from '@/lib/socket';
 import { cn } from '@/lib/cn';
 import { useUiStore } from '@/stores/ui';
 
 const adminItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Buyurtmalar', icon: ListOrdered },
+  { href: '/food-orders', label: 'Ovqat buyurtmalari', icon: UtensilsCrossed },
+  { href: '/kitchens', label: 'Oshxonalar', icon: ChefHat },
   { href: '/drivers', label: 'Haydovchilar', icon: Car },
+  { href: '/driver-versions', label: 'Ilova versiyalari', icon: Smartphone },
   { href: '/clients', label: 'Klientlar', icon: Users },
   { href: '/payment-requests', label: 'To‘lov so‘rovlari', icon: Inbox },
+  {
+    href: '/driver-applications',
+    label: 'Haydovchi bo‘lmoqchilar',
+    icon: UserPlus,
+  },
   { href: '/feedback', label: 'Murojaatlar', icon: MessageSquare },
+  { href: '/announcements', label: 'Xabarnoma', icon: Megaphone },
+  { href: '/promo-codes', label: 'Promo kodlar', icon: Ticket },
+  { href: '/referrals', label: 'Referral linklar', icon: Link2 },
   { href: '/coordinators', label: 'Koordinatorlar', icon: ShieldCheck },
   { href: '/tariff', label: 'Tariflar', icon: Receipt },
   { href: '/settings', label: 'Sozlamalar', icon: Settings },
+  { href: '/password', label: 'Parolni o‘zgartirish', icon: KeyRound },
 ];
 
 const coordinatorItems = [
   { href: '/coordinator', label: 'To‘lov yuborish', icon: Wallet },
+  { href: '/password', label: 'Parolni o‘zgartirish', icon: KeyRound },
 ];
 
-function decodeRole(token: string | undefined): 'admin' | 'coordinator' | null {
+// Kitchen (oshxona) panel — role 'kitchen' only sees these.
+const kitchenItems = [
+  { href: '/kitchen', label: 'Buyurtmalar', icon: ClipboardList },
+  { href: '/kitchen/new-order', label: 'Yangi buyurtma', icon: PlusCircle },
+  { href: '/kitchen/menu', label: 'Menyu', icon: BookOpen },
+  { href: '/kitchen/couriers', label: 'Kuryerlar', icon: Bike },
+  { href: '/kitchen/wallet', label: 'Hamyon', icon: Wallet },
+  { href: '/kitchen/settings', label: 'Sozlamalar', icon: Settings },
+];
+
+type Role = 'admin' | 'coordinator' | 'kitchen';
+
+function decodeRole(token: string | undefined): Role | null {
   if (!token) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   try {
     const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
     const p = JSON.parse(json);
-    return p?.role === 'coordinator' ? 'coordinator' : 'admin';
+    if (p?.role === 'coordinator') return 'coordinator';
+    if (p?.role === 'kitchen') return 'kitchen';
+    return 'admin';
   } catch {
     return null;
   }
 }
+
+const ROLE_LABEL: Record<Role, string> = {
+  admin: 'Admin',
+  coordinator: 'Koordinator',
+  kitchen: 'Oshxona',
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -56,7 +105,86 @@ export function Sidebar() {
   const open = useUiStore((s) => s.sidebarOpen);
   const setOpen = useUiStore((s) => s.setSidebarOpen);
   const role = decodeRole(Cookies.get('admin_token'));
-  const items = role === 'coordinator' ? coordinatorItems : adminItems;
+  const items =
+    role === 'coordinator' ? coordinatorItems : role === 'kitchen' ? kitchenItems : adminItems;
+
+  const { data: applicationsUnread } = useQuery({
+    queryKey: ['driver-applications-unread'],
+    queryFn: async () =>
+      (
+        await api.get<{ count: number }>(
+          '/admin/driver-applications/unread-count',
+        )
+      ).data.count,
+    enabled: role === 'admin',
+    refetchInterval: 15_000,
+  });
+
+  const { data: feedbackUnread } = useQuery({
+    queryKey: ['feedback-unread'],
+    queryFn: async () =>
+      (await api.get<{ count: number }>('/admin/feedback/unread-count')).data.count,
+    enabled: role === 'admin',
+    refetchInterval: 15_000,
+  });
+
+  // Active food deliveries (badge on "Ovqat buyurtmalari").
+  const { data: foodSummary } = useQuery({
+    queryKey: ['food-summary'],
+    queryFn: async () =>
+      (await api.get<{ active: number }>('/admin/food/summary')).data,
+    enabled: role === 'admin',
+    refetchInterval: 15_000,
+  });
+  const foodActive = foodSummary?.active ?? 0;
+
+  // Kitchen panel: own name + "new orders" badge.
+  const { data: kitchenMe } = useQuery({
+    queryKey: ['kitchen-me'],
+    queryFn: async () =>
+      (await api.get<{ name: string; isOpen: boolean }>('/kitchen/me')).data,
+    enabled: role === 'kitchen',
+  });
+  const { data: kitchenActive } = useQuery({
+    queryKey: ['kitchen-orders', 'active'],
+    queryFn: async () =>
+      (
+        await api.get<{ status: string }[]>('/kitchen/orders', {
+          params: { scope: 'active' },
+        })
+      ).data,
+    enabled: role === 'kitchen',
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
+  });
+  const kitchenNew = (kitchenActive ?? []).filter((o) => o.status === 'NEW').length;
+  // Kitchen wallet balance (same cache key as the wallet page / board).
+  const { data: kitchenWallet } = useQuery({
+    queryKey: ['kitchen-wallet', '/kitchen'],
+    queryFn: async () => (await api.get<KitchenWallet>('/kitchen/wallet')).data,
+    enabled: role === 'kitchen',
+    refetchInterval: 60_000,
+  });
+  const kitchenBalance = kitchenWallet?.balance;
+
+  // A bot user wrote to the admin — refresh the inbox badge right away.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (role !== 'admin') return;
+    const socket = getAdminSocket();
+    if (!socket) return;
+    const onNew = () => {
+      qc.invalidateQueries({ queryKey: ['feedback-unread'] });
+      qc.invalidateQueries({ queryKey: ['feedback'] });
+    };
+    const onFood = () => qc.invalidateQueries({ queryKey: ['food-summary'] });
+    socket.on('feedback_new', onNew);
+    socket.on('food_order_update', onFood);
+    return () => {
+      socket.off('feedback_new', onNew);
+      socket.off('food_order_update', onFood);
+    };
+  }, [qc, role]);
 
   // Close drawer on route change (mobile)
   useEffect(() => {
@@ -74,6 +202,13 @@ export function Sidebar() {
 
   const logout = () => {
     Cookies.remove('admin_token');
+    // Inside the Telegram Mini App there is no login form to go back to —
+    // just close the panel.
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.initData) {
+      tg.close?.();
+      return;
+    }
     router.replace('/login');
   };
 
@@ -95,22 +230,49 @@ export function Sidebar() {
         )}
       >
         <div className="p-5 border-b border-neutral-800 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg overflow-hidden ring-1 ring-gold/50 shrink-0">
+          <div className="w-12 h-12 rounded-xl overflow-hidden ring-2 ring-gold/60 shadow-[0_10px_30px_-10px_rgba(59,155,255,0.8)] shrink-0">
             <Image
-              src="/logo.jpg"
-              alt="OZIMIZNI TAXI"
-              width={40}
-              height={40}
+              src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/logo.jpg`}
+              alt="MOVIY TAXI"
+              width={48}
+              height={48}
               className="w-full h-full object-cover"
+              priority
             />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold tracking-wide leading-tight">
-              OZIMIZNI
+              MOVIY
             </p>
             <p className="text-xs text-gold leading-tight">
-              TAXI · {role === 'coordinator' ? 'Koordinator' : 'Admin'}
+              TAXI · {ROLE_LABEL[role ?? 'admin']}
             </p>
+            {role === 'kitchen' && kitchenMe?.name && (
+              <p
+                className="mt-0.5 text-[11px] text-neutral-300 leading-tight flex items-center gap-1 min-w-0"
+                title={kitchenMe.name}
+              >
+                <span
+                  className={
+                    'w-1.5 h-1.5 rounded-full shrink-0 ' +
+                    (kitchenMe.isOpen ? 'bg-emerald-400' : 'bg-red-500')
+                  }
+                />
+                <span className="truncate">{kitchenMe.name}</span>
+              </p>
+            )}
+            {role === 'kitchen' && kitchenBalance != null && (
+              <Link
+                href="/kitchen/wallet"
+                title="Hamyon balansi"
+                className={
+                  'mt-0.5 text-[11px] leading-tight flex items-center gap-1 tabular-nums font-semibold ' +
+                  (kitchenBalance < 0 ? 'text-red-400' : 'text-neutral-300 hover:text-white')
+                }
+              >
+                <Wallet size={11} className="shrink-0" /> {som(kitchenBalance)} so‘m
+              </Link>
+            )}
           </div>
           <button
             onClick={() => setOpen(false)}
@@ -123,7 +285,12 @@ export function Sidebar() {
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {items.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href);
+            // '/kitchen' must not light up on '/kitchen/menu', nor
+            // '/coordinator' on '/coordinators'.
+            const active =
+              href === '/kitchen'
+                ? pathname === href
+                : pathname === href || pathname.startsWith(href + '/');
             return (
               <Link
                 key={href}
@@ -136,7 +303,32 @@ export function Sidebar() {
                 )}
               >
                 <Icon className="w-5 h-5" strokeWidth={1.75} />
-                {label}
+                <span className="flex-1">{label}</span>
+                {href === '/driver-applications' && !!applicationsUnread && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {applicationsUnread}
+                  </span>
+                )}
+                {href === '/feedback' && !!feedbackUnread && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {feedbackUnread}
+                  </span>
+                )}
+                {href === '/food-orders' && foodActive > 0 && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {foodActive}
+                  </span>
+                )}
+                {href === '/kitchen/wallet' && kitchenBalance != null && kitchenBalance < 0 && (
+                  <span className="h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {som(kitchenBalance)}
+                  </span>
+                )}
+                {href === '/kitchen' && kitchenNew > 0 && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                    {kitchenNew}
+                  </span>
+                )}
               </Link>
             );
           })}

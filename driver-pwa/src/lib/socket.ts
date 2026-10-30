@@ -17,10 +17,11 @@ export function getSocket(token: string): Socket {
   lastToken = token;
   socket = io(url + '/drivers', {
     auth: { token },
-    // Default Socket.IO behavior: start with HTTP long-polling, then upgrade
-    // to WebSocket. Avoids noisy "WebSocket failed" errors when WS upgrade
-    // is unavailable; client still gets real-time once upgraded.
-    transports: ['polling', 'websocket'],
+    // WebSocket first: the polling handshake costs 3 extra round-trips
+    // (~1s+ on mobile data). If WS is blocked, tryAllTransports falls back
+    // to polling on the next attempt.
+    transports: ['websocket', 'polling'],
+    tryAllTransports: true,
     upgrade: true,
     autoConnect: true,
     reconnection: true,

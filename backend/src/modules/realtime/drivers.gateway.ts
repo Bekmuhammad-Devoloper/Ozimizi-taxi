@@ -57,6 +57,13 @@ export class DriversGateway
       if (!token) throw new Error('Missing token');
       const payload = await this.auth.verifyJwt(token);
       if (payload.role !== 'driver') throw new Error('Wrong role');
+      // Deleted (soft) or blocked drivers keep a valid JWT for a while —
+      // don't let them hold a socket, they would never be broadcast to.
+      const driver = await this.drivers.findOne({
+        where: { id: payload.sub },
+        select: { id: true, isActive: true },
+      });
+      if (!driver || !driver.isActive) throw new Error('Driver inactive');
       socket.data.driverId = payload.sub;
       socket.join(`driver:${payload.sub}`);
       this.logger.log(`Driver connected ${payload.sub}`);
@@ -80,10 +87,7 @@ export class DriversGateway
     const id = socket.data.driverId;
     if (!id) return;
     if (typeof body?.lat !== 'number' || typeof body?.lng !== 'number') return;
-    await this.drivers.update(id, {
-      currentLat: body.lat,
-      currentLng: body.lng,
-    });
+    await this.orderService.handleLocationPing(id, body.lat, body.lng);
   }
 
   @SubscribeMessage('accept_order')

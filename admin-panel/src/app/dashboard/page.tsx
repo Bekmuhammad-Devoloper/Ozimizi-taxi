@@ -27,7 +27,10 @@ import {
 } from 'recharts';
 import { Shell } from '@/components/Shell';
 import { StatsCard } from '@/components/StatsCard';
+import { LedgerCard } from '@/components/LedgerCard';
+import { InstallPrompt } from '@/components/InstallPrompt';
 import { api } from '@/lib/api';
+import { orderStatusLabel } from '@/lib/status';
 import { getAdminSocket } from '@/lib/socket';
 
 type Period = 'day' | 'week' | 'month';
@@ -113,23 +116,28 @@ export default function DashboardPage() {
         </div>
       }
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+      <InstallPrompt />
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 sm:gap-4 mb-6">
         <StatsCard
-          title="Treasury balans"
-          value={fmt(stats?.treasuryBalance ?? 0) + ' so‘m'}
+          title="Xazina"
+          value={fmt(stats?.treasuryBalance ?? 0)}
+          unit="so‘m"
           icon={Vault}
           accent="bg-ink text-gold"
           hint="100M tizimda"
+          className="col-span-2 xl:col-span-1"
         />
         <StatsCard
           title="Aylanma"
-          value={fmt(stats?.totalRevenue ?? 0) + ' so‘m'}
+          value={fmt(stats?.totalRevenue ?? 0)}
+          unit="so‘m"
           icon={Banknote}
           accent="bg-green-50 text-green-700"
         />
         <StatsCard
           title="Komissiya"
-          value={fmt(stats?.totalCommission ?? 0) + ' so‘m'}
+          value={fmt(stats?.totalCommission ?? 0)}
+          unit="so‘m"
           icon={Percent}
           accent="bg-gold/15 text-gold-deep"
         />
@@ -147,6 +155,8 @@ export default function DashboardPage() {
           hint="Hozir online"
         />
       </div>
+
+      <LedgerCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="card p-5 lg:col-span-2">
@@ -172,12 +182,13 @@ export default function DashboardPage() {
                 }}
               />
               <Line
+                isAnimationActive={false}
                 type="monotone"
                 dataKey="revenue"
                 stroke="#0a0a0a"
                 strokeWidth={2.5}
-                dot={{ r: 3, fill: '#facc15', stroke: '#0a0a0a', strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: '#facc15', stroke: '#0a0a0a', strokeWidth: 2 }}
+                dot={{ r: 3, fill: '#3b9bff', stroke: '#0a0a0a', strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: '#3b9bff', stroke: '#0a0a0a', strokeWidth: 2 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -194,6 +205,9 @@ export default function DashboardPage() {
                 nameKey="name"
                 outerRadius={75}
                 innerRadius={40}
+                // Animating from a zero-size container left the donut blank
+                // on phones.
+                isAnimationActive={false}
                 stroke="#fff"
                 strokeWidth={2}
               >
@@ -255,8 +269,9 @@ export default function DashboardPage() {
                   cursor={{ fill: '#fef3c7' }}
                 />
                 <Bar
+                  isAnimationActive={false}
                   dataKey="orders"
-                  fill="#facc15"
+                  fill="#3b9bff"
                   radius={[6, 6, 0, 0]}
                 />
               </BarChart>
@@ -318,7 +333,7 @@ export default function DashboardPage() {
 
 const pieColors = [
   '#0a0a0a',
-  '#facc15',
+  '#3b9bff',
   '#16a34a',
   '#2563eb',
   '#dc2626',
@@ -344,7 +359,10 @@ function buildStatusPie(orders: any[]) {
   orders.forEach((o) => {
     map[o.status] = (map[o.status] ?? 0) + 1;
   });
-  return Object.entries(map).map(([name, value]) => ({ name, value }));
+  return Object.entries(map).map(([name, value]) => ({
+    name: orderStatusLabel(name),
+    value,
+  }));
 }
 
 function fmt(v: number | string) {

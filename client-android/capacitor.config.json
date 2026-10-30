@@ -1,0 +1,21 @@
+{
+  "appId": "uz.moviytaxi.client",
+  "appName": "Moviy Taxi",
+  "webDir": "www",
+  "appendUserAgent": "MoviyClient/1.0.2",
+  "server": {
+    "url": "https://moviytaxi.uz/client/",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a0a0a",
+    "useLegacyBridge": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_notify",
+      "iconColor": "#3b9bff"
+    }
+  }
+}

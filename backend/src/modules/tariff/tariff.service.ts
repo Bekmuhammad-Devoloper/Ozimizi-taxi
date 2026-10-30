@@ -25,6 +25,21 @@ export class TariffService {
     if (dto.minimumFare !== undefined) row.minimumFare = String(dto.minimumFare);
     if (dto.commissionPerOrder !== undefined)
       row.commissionPerOrder = String(dto.commissionPerOrder);
+    if (dto.commissionPercent !== undefined)
+      row.commissionPercent = String(dto.commissionPercent);
+    if (dto.waitingFreeMinutes !== undefined)
+      row.waitingFreeMinutes = Math.floor(Number(dto.waitingFreeMinutes));
+    if (dto.waitingPricePerMinute !== undefined)
+      row.waitingPricePerMinute = String(dto.waitingPricePerMinute);
+    if (dto.tiers !== undefined) {
+      // Store normalised: ascending by distance, no duplicate limits.
+      const seen = new Set<number>();
+      row.tiers = dto.tiers
+        .map((t) => ({ uptoKm: Number(t.uptoKm), price: Number(t.price) }))
+        .filter((t) => t.uptoKm > 0 && t.price >= 0)
+        .sort((a, b) => a.uptoKm - b.uptoKm)
+        .filter((t) => (seen.has(t.uptoKm) ? false : (seen.add(t.uptoKm), true)));
+    }
     return this.repo.save(row);
   }
 }

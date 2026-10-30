@@ -27,7 +27,7 @@ export function BottomNav() {
           className="absolute inset-0 opacity-30 pointer-events-none"
           style={{
             background:
-              'radial-gradient(circle at 50% 120%, rgba(250,204,21,0.35), transparent 60%)',
+              'radial-gradient(circle at 50% 120%, rgba(59,155,255,0.35), transparent 60%)',
           }}
         />
         <div className="relative grid grid-cols-2">

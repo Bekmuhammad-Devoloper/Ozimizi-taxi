@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,6 +16,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { randomUUID } from 'crypto';
 import { DriverService } from './driver.service';
+import { FoodService } from '../food/food.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -32,7 +34,15 @@ const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 @Roles('driver')
 @Controller('driver')
 export class DriverController {
-  constructor(private readonly drivers: DriverService) {}
+  constructor(
+    private readonly drivers: DriverService,
+    private readonly food: FoodService,
+  ) {}
+
+  @Post('contract/accept')
+  acceptContract(@CurrentUser() user: JwtPayload) {
+    return this.drivers.acceptContract(user.sub);
+  }
 
   @Get('me')
   async me(@CurrentUser() user: JwtPayload) {
@@ -47,6 +57,15 @@ export class DriverController {
 
   @Patch('location')
   location(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateLocationDto,
+  ) {
+    return this.drivers.updateLocation(user.sub, dto.lat, dto.lng);
+  }
+
+  /** Same as PATCH — the Android background service posts here. */
+  @Post('location')
+  locationPost(
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateLocationDto,
   ) {
@@ -93,6 +112,51 @@ export class DriverController {
     return this.drivers.acceptOrder(user.sub, id);
   }
 
+  /** Taximeter: street pickup (client not in the system) — ride starts now. */
+  @Post('street/start')
+  streetStart(@CurrentUser() user: JwtPayload, @Body() body: { lat: number; lng: number }) {
+    return this.drivers.startStreetRide(user.sub, Number(body?.lat), Number(body?.lng));
+  }
+
+  /** App version on start: '1.0.6' (APK), 'web' (browser)… */
+  @Post('app-version')
+  appVersion(@CurrentUser() user: JwtPayload, @Body() body: { version?: string; platform?: string }) {
+    return this.drivers.reportVersion(user.sub, body?.version, body?.platform);
+  }
+
+  /** The phone confirms the order alarm started ringing (app or service). */
+  @Post('orders/:id/ring')
+  async ring(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: { via?: string },
+  ) {
+    // The id may be a taxi order or a food delivery — each side ignores
+    // ids it does not know.
+    await this.food.markRinging(user.sub, id, body?.via ?? 'app');
+    return this.drivers.ringOrder(user.sub, id, body?.via ?? 'app');
+  }
+
+  /** The offer ringing for me right now (app opened from the notification). */
+  @Get('offers/current')
+  async currentOffer(@CurrentUser() user: JwtPayload) {
+    return (await this.drivers.currentOffer(user.sub)) ?? (await this.food.currentOffer(user.sub));
+  }
+
+  /** Long-poll for the Android background service (app may be closed). */
+  @Get('inbox')
+  inbox(@CurrentUser() user: JwtPayload, @Query('after') after?: string) {
+    const n = after == null || after === '' ? null : Number(after);
+    return this.drivers.inbox(user.sub, Number.isFinite(n as number) ? (n as number) : null);
+  }
+
+  /** "Rad etish" on a personal offer — pass it to the next nearest driver. */
+  @Post('orders/:id/decline')
+  async decline(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.food.declineOffer(user.sub, id);
+    return this.drivers.declineOrder(user.sub, id);
+  }
+
   @Post('orders/:id/on-the-way')
   onTheWay(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.drivers.onTheWay(user.sub, id);
@@ -120,6 +184,16 @@ export class DriverController {
   @Post('orders/:id/cancel')
   cancelOrder(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.drivers.cancel(user.sub, id);
+  }
+
+  @Post('orders/:id/wait/start')
+  waitStart(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.drivers.setWaiting(user.sub, id, true);
+  }
+
+  @Post('orders/:id/wait/stop')
+  waitStop(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.drivers.setWaiting(user.sub, id, false);
   }
 
   @Get('orders/history')

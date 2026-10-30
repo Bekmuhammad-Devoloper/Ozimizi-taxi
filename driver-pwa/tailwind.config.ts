@@ -13,9 +13,9 @@ const config: Config = {
         line: '#e5e5e5',
         // brand
         gold: {
-          DEFAULT: '#facc15', // yellow-400 — primary brand
-          dark: '#ca8a04', // yellow-600
-          deep: '#854d0e', // yellow-800 — text on gold
+          DEFAULT: '#3b9bff', // Moviy blue (logo) — primary brand
+          dark: '#1d6fe0', // deeper blue
+          deep: '#0b3d91', // navy — text on light blue tints
         },
       },
       borderRadius: {

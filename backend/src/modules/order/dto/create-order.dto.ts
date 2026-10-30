@@ -13,4 +13,17 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   pickupAddress?: string;
+
+  // Optional destination chosen by the passenger (client app).
+  @IsOptional()
+  @IsLatitude()
+  destinationLat?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  destinationLng?: number;
+
+  @IsOptional()
+  @IsString()
+  destinationAddress?: string;
 }

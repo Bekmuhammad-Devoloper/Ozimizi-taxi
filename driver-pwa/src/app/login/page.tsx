@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, Phone, Lock } from 'lucide-react';
@@ -27,6 +27,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
+
+  // Already logged in (e.g. the app was reopened) — skip the form.
+  useEffect(() => {
+    const { token, driver } = useAuthStore.getState();
+    if (token) router.replace(driver?.isApproved === false ? '/pending' : '/dashboard');
+  }, [router]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

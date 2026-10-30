@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Context, Markup, Telegraf } from 'telegraf';
 import { FeedbackService } from '../feedback/feedback.service';
+import { telegramAgent } from '../../common/utils/telegram-agent';
 
 interface ChatState {
   awaiting: 'message';
@@ -36,7 +37,7 @@ export class FeedbackBotService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    this.bot = new Telegraf(token);
+    this.bot = new Telegraf(token, { telegram: { agent: telegramAgent } });
     this.registerHandlers(this.bot);
     this.bot.launch({ dropPendingUpdates: true }).catch((e: any) => {
       this.logger.error(

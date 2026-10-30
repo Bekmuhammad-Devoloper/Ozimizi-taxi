@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
+  CarTaxiFront,
   TrendingUp,
   Hash,
   Route,
@@ -10,12 +12,21 @@ import {
   Sparkles,
   AlertTriangle,
   User as UserIcon,
+  XCircle,
 } from 'lucide-react';
 import { IOSSwitch } from '@/components/IOSSwitch';
 import { Shell } from '@/components/Shell';
+import { AnnouncementCard } from '@/components/AnnouncementCard';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
-import { OrderModel, useOrderStore } from '@/stores/order';
+import { fmtDateTime } from '@/lib/date';
+import { meterSession } from '@/hooks/useMeter';
+import { OrderModel, OrderStatus, useOrderStore } from '@/stores/order';
+import {
+  DeliveryView,
+  isDeliveryLive,
+  useDeliveryStore,
+} from '@/stores/delivery';
 
 export default function DashboardPage() {
   return (
@@ -32,6 +43,23 @@ function DashboardInner() {
   const history = useOrderStore((s) => s.history);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const delivery = useDeliveryStore((s) => s.active);
+  const setDelivery = useDeliveryStore((s) => s.setActive);
+  const [deliveries, setDeliveries] = useState<DeliveryView[]>([]);
+  const active = useOrderStore((s) => s.active);
+  const router = useRouter();
+  const liveOrder =
+    active && active.status !== 'COMPLETED' && active.status !== 'CANCELLED' ? active : null;
+  const streetRide = liveOrder?.source === 'street';
+
+  // App restarted with a street ride running (Android may kill the app in
+  // the background): go straight back to the taximeter — once per app start.
+  useEffect(() => {
+    if (meterSession.shown) return;
+    meterSession.shown = true;
+    const a = useOrderStore.getState().active;
+    if (a?.source === 'street' && a.status === 'IN_PROGRESS') router.replace('/taximeter');
+  }, [router]);
 
   useEffect(() => {
     api.get('/driver/me').then((r) => setDriver(r.data)).catch(() => {});
@@ -39,11 +67,32 @@ function DashboardInner() {
       .get<OrderModel[]>('/driver/orders/history')
       .then((r) => setHistory(r.data))
       .catch(() => {});
+    api
+      .get<DeliveryView[]>('/driver/deliveries/history')
+      .then((r) => setDeliveries(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {});
   }, [setDriver, setHistory]);
 
-  const todayStats = useMemo(() => computeToday(history), [history]);
-  const yesterdayStats = useMemo(() => computeYesterday(history), [history]);
-  const weekStats = useMemo(() => computeWeek(history), [history]);
+  // The summary of a finished delivery was left — forget it.
+  useEffect(() => {
+    if (useDeliveryStore.getState().active?.status === 'DELIVERED') setDelivery(null);
+  }, [setDelivery]);
+
+  // Taxi rides + food deliveries (the courier's fee counts as the price).
+  const allOrders = useMemo<DashOrder[]>(
+    () =>
+      deliveries.length
+        ? [...history, ...deliveries.map(deliveryAsOrder)].sort(
+            (a, b) =>
+              new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime(),
+          )
+        : history,
+    [history, deliveries],
+  );
+
+  const todayStats = useMemo(() => computeToday(allOrders), [allOrders]);
+  const yesterdayStats = useMemo(() => computeYesterday(allOrders), [allOrders]);
+  const weekStats = useMemo(() => computeWeek(allOrders), [allOrders]);
 
   const toggle = async () => {
     if (busy) return;
@@ -69,6 +118,17 @@ function DashboardInner() {
   };
 
   const online = driver?.isOnline ?? false;
+  const gpsStatus = useOrderStore((s) => s.gpsStatus);
+  // Orders are broadcast by distance, so an online driver without a GPS fix
+  // silently gets nothing — say so.
+  const gpsWarning =
+    online && gpsStatus !== 'ok'
+      ? gpsStatus === 'denied'
+        ? 'Joylashuvga ruxsat berilmagan — buyurtmalar kelmaydi. Brauzer sozlamalarida joylashuvga ruxsat bering.'
+        : gpsStatus === 'unavailable'
+          ? 'Joylashuv aniqlanmadi — buyurtmalar kelmaydi. GPS yoqilganini tekshiring.'
+          : 'Joylashuv aniqlanmoqda… buyurtmalar GPS topilgach kela boshlaydi.'
+      : null;
 
   return (
     <>
@@ -79,14 +139,14 @@ function DashboardInner() {
           className="absolute inset-0 opacity-30 pointer-events-none"
           style={{
             background:
-              'radial-gradient(circle at 80% 0%, rgba(250,204,21,0.45), transparent 60%)',
+              'radial-gradient(circle at 80% 0%, rgba(59,155,255,0.45), transparent 60%)',
           }}
         />
         <div className="relative flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-lg overflow-hidden ring-1 ring-gold/50">
             <Image
               src="/logo.jpg"
-              alt="OZIMIZNI TAXI"
+              alt="MOVIY TAXI"
               width={40}
               height={40}
               className="w-full h-full object-cover"
@@ -94,7 +154,7 @@ function DashboardInner() {
           </div>
           <div className="flex-1 leading-tight min-w-0">
             <p className="text-[10px] tracking-widest text-neutral-400 uppercase">
-              OZIMIZNI TAXI
+              MOVIY TAXI
             </p>
             <p className="text-sm font-semibold truncate">
               {driver?.fullName ?? '—'}
@@ -155,6 +215,102 @@ function DashboardInner() {
         {err && <p className="relative mt-3 text-xs text-red-300">{err}</p>}
       </header>
 
+      {gpsWarning && (
+        <div
+          className={
+            'mx-6 mt-3 rounded-xl px-3 py-2.5 text-xs font-medium flex items-start gap-2 border ' +
+            (gpsStatus === 'searching'
+              ? 'bg-neutral-100 text-neutral-700 border-line'
+              : 'bg-orange-50 text-orange-800 border-orange-200')
+          }
+        >
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>{gpsWarning}</span>
+        </div>
+      )}
+
+      {/* ACTIVE RIDE (taximeter or an order from the bot/app) */}
+      {liveOrder && (
+        <Link
+          href={streetRide ? '/taximeter' : '/order/active'}
+          className="mx-6 mt-3 flex items-center gap-3 rounded-2xl bg-gold text-ink p-4 shadow-lg shadow-gold/30 active:scale-[0.99]"
+        >
+          <span className="w-10 h-10 rounded-xl bg-ink text-gold flex items-center justify-center shrink-0">
+            <CarTaxiFront size={20} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[10px] uppercase tracking-widest font-bold">
+              {streetRide ? 'Taksometr ishlayapti' : 'Faol buyurtma'}
+            </span>
+            <span className="block text-sm font-semibold truncate">
+              {streetRide
+                ? 'Safar davom etmoqda — taksometrni ochish'
+                : liveOrder.pickupAddress || 'Buyurtmani ochish'}
+            </span>
+          </span>
+          <ChevronRight size={18} className="shrink-0" />
+        </Link>
+      )}
+
+      {/* TAXIMETER: street pickup (taxi drivers, nothing else running) */}
+      {driver?.kind !== 'courier' && !liveOrder && !isDeliveryLive(delivery) && (
+        <Link
+          href="/taximeter"
+          className="mx-6 mt-4 flex items-center gap-4 rounded-2xl bg-ink text-white p-4 shadow-lg shadow-black/20 ring-1 ring-gold/30 active:scale-[0.99]"
+        >
+          <span className="w-14 h-14 rounded-2xl bg-gold text-ink flex items-center justify-center text-2xl shrink-0">
+            🚖
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-lg font-extrabold leading-tight">Taksometr</span>
+            <span className="block text-xs text-neutral-400 mt-0.5">
+              Ko‘chadan olingan mijoz uchun
+            </span>
+          </span>
+          <ChevronRight size={20} className="shrink-0 text-gold" />
+        </Link>
+      )}
+
+      {/* ACTIVE FOOD DELIVERY */}
+      {isDeliveryLive(delivery) && (
+        <Link
+          href="/delivery/active"
+          className="mx-6 mt-3 flex items-center gap-3 rounded-2xl bg-gold text-ink p-4 shadow-lg shadow-gold/30 active:scale-[0.99]"
+        >
+          <span className="w-10 h-10 rounded-xl bg-ink flex items-center justify-center text-lg shrink-0">
+            🍽
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[10px] uppercase tracking-widest font-bold">
+              Faol yetkazish #{delivery.number}
+            </span>
+            <span className="block text-sm font-semibold truncate">
+              {delivery.status === 'COOKING'
+                ? `${delivery.kitchen?.name ?? 'Oshxona'} — tayyorlanmoqda`
+                : delivery.status === 'READY'
+                  ? 'Buyurtma tayyor — oshxonadan oling'
+                  : `Mijozga yetkazing: ${delivery.address ?? ''}`}
+            </span>
+          </span>
+          <ChevronRight size={18} className="shrink-0" />
+        </Link>
+      )}
+      {delivery?.status === 'CANCELLED' && (
+        <div className="mx-6 mt-3 rounded-2xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <XCircle size={18} className="text-red-600 shrink-0" />
+          <p className="flex-1 text-sm font-semibold text-red-700">
+            Yetkazish #{delivery.number} bekor qilindi
+          </p>
+          <button
+            type="button"
+            onClick={() => setDelivery(null)}
+            className="h-9 px-4 rounded-xl bg-white border border-red-200 text-xs font-bold text-red-700 shrink-0"
+          >
+            OK
+          </button>
+        </div>
+      )}
+
       {online ? (
         <>
           {/* TODAY STATS */}
@@ -197,7 +353,7 @@ function DashboardInner() {
                 Hammasi <ChevronRight size={12} />
               </Link>
             </div>
-            {history.length === 0 ? (
+            {allOrders.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-line p-6 text-center">
                 <Sparkles size={20} className="mx-auto text-gold mb-2" />
                 <p className="text-sm text-neutral-500">
@@ -208,7 +364,7 @@ function DashboardInner() {
               </div>
             ) : (
               <ul className="space-y-2">
-                {history.slice(0, 3).map((o) => (
+                {allOrders.slice(0, 3).map((o) => (
                   <li
                     key={o.id}
                     className="bg-white border border-line rounded-2xl p-4"
@@ -216,6 +372,11 @@ function DashboardInner() {
                     <div className="flex justify-between items-start">
                       <div>
                         <StatusBadge status={o.status} />
+                        {o.deliveryNo != null && (
+                          <span className="ml-2 text-xs font-semibold text-neutral-600">
+                            🍽 #{o.deliveryNo}
+                          </span>
+                        )}
                         <p className="text-xs text-neutral-500 mt-2">
                           {fmtDateTime(o.createdAt)}
                         </p>
@@ -230,22 +391,7 @@ function DashboardInner() {
             )}
           </section>
 
-          {/* TIPS */}
-          <section className="px-6 mt-8 mb-6">
-            <div className="bg-ink text-white rounded-2xl p-5 relative overflow-hidden">
-              <div
-                aria-hidden
-                className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-gold/20 blur-2xl"
-              />
-              <p className="relative text-[10px] uppercase tracking-widest text-gold font-bold mb-2">
-                Maslahat
-              </p>
-              <p className="relative text-sm leading-relaxed text-neutral-300">
-                Markaziy hududda turish — buyurtmalar tezroq keladi. GPS yoqilgan
-                bo‘lsin va batareya quvvati 30%dan kam bo‘lmasin.
-              </p>
-            </div>
-          </section>
+          <AnnouncementCard />
         </>
       ) : (
         /* OFFLINE — show yesterday + week summary */
@@ -388,6 +534,31 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+type DashOrder = OrderModel & { deliveryNo?: number };
+
+const DELIVERY_AS_ORDER_STATUS: Record<string, OrderStatus> = {
+  DELIVERED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  REJECTED: 'CANCELLED',
+  PICKED_UP: 'IN_PROGRESS',
+};
+
+/** A food delivery in the shape the stats / recent list use. */
+function deliveryAsOrder(d: DeliveryView): DashOrder {
+  return {
+    id: `delivery-${d.id}`,
+    status: DELIVERY_AS_ORDER_STATUS[d.status] ?? 'ACCEPTED',
+    pickupLat: d.kitchen?.lat ?? d.lat,
+    pickupLng: d.kitchen?.lng ?? d.lng,
+    pickupAddress: d.kitchen?.name ?? null,
+    distanceKm: d.distanceKm != null ? String(d.distanceKm) : null,
+    price: String(d.deliveryFee ?? 0),
+    commission: String(d.courierCommission ?? 0),
+    createdAt: d.deliveredAt ?? d.createdAt ?? undefined,
+    deliveryNo: d.number,
+  };
+}
+
 // Local-timezone YYYY-MM-DD. toISOString() returns UTC and silently shifts
 // the "day" in UZ (UTC+5) for ~5 hours after local midnight, so we format
 // in local time instead.
@@ -438,13 +609,4 @@ function summarize(
 
 function fmt(v: string | number) {
   return Number(v).toLocaleString('uz');
-}
-function fmtDateTime(s?: string) {
-  if (!s) return '—';
-  const d = new Date(s);
-  return (
-    d.toLocaleDateString('uz', { day: '2-digit', month: 'short' }) +
-    ' · ' +
-    d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })
-  );
 }

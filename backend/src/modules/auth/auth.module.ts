@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Driver } from '../driver/driver.entity';
 import { Admin } from '../admin/admin.entity';
+import { Client } from '../client/client.entity';
 import { PasswordResetToken } from './password-reset-token.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
@@ -12,7 +13,7 @@ import { JwtStrategy } from './jwt.strategy';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Driver, Admin, PasswordResetToken]),
+    TypeOrmModule.forFeature([Driver, Admin, Client, PasswordResetToken]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

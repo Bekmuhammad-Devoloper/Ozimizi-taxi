@@ -15,6 +15,12 @@ export interface DriverInfo {
   carPlate?: string | null;
   carPhotoUrl?: string | null;
   profileComplete?: boolean;
+  contractAcceptedAt?: string | null;
+  approvedAt?: string | null;
+  /** 'courier' = foot/bike/moto courier (deliveries only, no car fields). */
+  kind?: 'taxi' | 'courier';
+  /** Taxi drivers: also receive food deliveries. */
+  acceptDelivery?: boolean;
 }
 
 interface AuthState {
@@ -35,7 +41,11 @@ export const useAuthStore = create<AuthState>()(
         set((s) => ({
           driver: s.driver ? { ...s.driver, ...patch } : (patch as DriverInfo),
         })),
-      logout: () => set({ token: null, driver: null }),
+      logout: () => {
+        // Stop the APK's background service (no-op in the browser).
+        void import('@/lib/native').then((m) => m.driverServiceStop()).catch(() => undefined);
+        set({ token: null, driver: null });
+      },
     }),
     { name: 'taxi-driver-auth' },
   ),

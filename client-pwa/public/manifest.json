@@ -1,0 +1,13 @@
+{
+  "name": "Moviy Taxi",
+  "short_name": "Moviy Taxi",
+  "description": "Moviy Taxi — taksi chaqirish ilovasi",
+  "start_url": "/client/",
+  "scope": "/client/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "/client/logo.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ]
+}

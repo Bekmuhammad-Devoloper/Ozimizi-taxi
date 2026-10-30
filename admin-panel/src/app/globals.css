@@ -20,7 +20,7 @@ body {
     @apply bg-white border border-line rounded-2xl;
   }
   .input {
-    @apply w-full h-10 px-3 text-sm bg-white border border-line rounded-lg outline-none focus:border-ink focus:ring-2 focus:ring-gold/30 transition-colors;
+    @apply w-full h-11 sm:h-10 px-3 text-base sm:text-sm bg-white border border-line rounded-lg outline-none focus:border-ink focus:ring-2 focus:ring-gold/30 transition-colors;
   }
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 h-10 px-4 bg-ink text-gold text-sm font-semibold rounded-lg active:scale-[0.98] transition-transform disabled:opacity-50;

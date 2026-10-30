@@ -10,11 +10,16 @@ import {
   X,
   Ban,
   ShieldCheck,
+  RotateCcw,
+  Crown,
+  Bike,
+  CarFront,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Shell } from '@/components/Shell';
 import { DriverAvatar } from '@/components/DriverAvatar';
 import { api } from '@/lib/api';
+import { fmtDate } from '@/lib/format';
 
 interface DriverRow {
   id: string;
@@ -24,19 +29,45 @@ interface DriverRow {
   isOnline: boolean;
   isActive: boolean;
   isApproved: boolean;
+  isBranded?: boolean;
+  kind?: 'taxi' | 'courier';
+  acceptDelivery?: boolean;
   avatarUrl: string | null;
   balance: string;
   createdAt: string;
+  deletedAt?: string | null;
+  ordersCount?: number;
+  approvedAt?: string | null;
+  contractAcceptedAt?: string | null;
 }
 
 export default function DriversPage() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [adjusting, setAdjusting] = useState<DriverRow | null>(null);
+  // Deleted accounts are kept (soft delete) and can be brought back.
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['drivers'],
-    queryFn: async () => (await api.get<DriverRow[]>('/admin/drivers')).data,
+    queryKey: ['drivers', showDeleted ? 'deleted' : 'active'],
+    queryFn: async () =>
+      (
+        await api.get<DriverRow[]>('/admin/drivers', {
+          params: showDeleted ? { deleted: 1 } : {},
+        })
+      ).data,
+  });
+
+  const branded = useMutation({
+    mutationFn: async ({ id, branded }: { id: string; branded: boolean }) =>
+      (await api.post(`/admin/drivers/${id}/branded`, { branded })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+  });
+
+  const restore = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post(`/admin/drivers/${id}/restore`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
   });
 
   const remove = useMutation({
@@ -79,6 +110,23 @@ export default function DriversPage() {
         </button>
       }
     >
+      <div className="flex gap-1.5 mb-4">
+        {([false, true] as const).map((del) => (
+          <button
+            key={String(del)}
+            onClick={() => setShowDeleted(del)}
+            className={
+              'px-3 h-8 text-[11px] uppercase tracking-wider font-bold rounded-full border transition-all ' +
+              (showDeleted === del
+                ? 'bg-ink text-gold border-ink'
+                : 'bg-white text-neutral-500 border-line hover:border-ink')
+            }
+          >
+            {del ? 'O‘chirilganlar' : 'Faol'}
+          </button>
+        ))}
+      </div>
+
       {/* Mobile card list */}
       <div className="lg:hidden space-y-3">
         {isLoading && (
@@ -111,6 +159,16 @@ export default function DriversPage() {
                     {!d.isActive && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200">
                         <Ban size={10} /> Bloklangan
+                      </span>
+                    )}
+                    {d.isBranded && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+                        Brend
+                      </span>
+                    )}
+                    {d.kind === 'courier' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200">
+                        <Bike size={10} /> Kuryer
                       </span>
                     )}
                     {!d.isApproved && (
@@ -161,7 +219,14 @@ export default function DriversPage() {
                 </p>
               </div>
               <div className="flex gap-1">
-                {!d.isApproved ? (
+                {showDeleted ? (
+                  <button
+                    onClick={() => restore.mutate(d.id)}
+                    className="h-9 px-3 rounded-lg flex items-center gap-1.5 bg-green-600 text-white text-xs font-bold"
+                  >
+                    <RotateCcw size={14} /> Tiklash
+                  </button>
+                ) : !d.isApproved ? (
                   <button
                     onClick={() => approve.mutate(d.id)}
                     className="w-9 h-9 rounded-lg flex items-center justify-center bg-green-600 text-white"
@@ -214,6 +279,18 @@ export default function DriversPage() {
                     <ShieldCheck size={16} />
                   </button>
                 )}
+                {!showDeleted && (
+                  <button
+                    onClick={() => branded.mutate({ id: d.id, branded: !d.isBranded })}
+                    className={
+                      'w-9 h-9 rounded-lg flex items-center justify-center ' +
+                      (d.isBranded ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700')
+                    }
+                    title={d.isBranded ? 'Brenddan olish' : 'Brendli qilish'}
+                  >
+                    <Crown size={16} />
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (confirm(`${d.fullName} o'chirilsinmi?`))
@@ -240,6 +317,7 @@ export default function DriversPage() {
               <th className="th">Email</th>
               <th className="th">Status</th>
               <th className="th text-right">Balans</th>
+              <th className="th text-right">Safarlar</th>
               <th className="th">Yaratilgan</th>
               <th className="th text-right">Amallar</th>
             </tr>
@@ -247,14 +325,14 @@ export default function DriversPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={7} className="p-10 text-center text-neutral-500">
+                <td colSpan={8} className="p-10 text-center text-neutral-500">
                   Yuklanmoqda…
                 </td>
               </tr>
             )}
             {!isLoading && (!data || data.length === 0) && (
               <tr>
-                <td colSpan={7} className="p-10 text-center text-neutral-500">
+                <td colSpan={8} className="p-10 text-center text-neutral-500">
                   Hozircha haydovchi yo'q.
                   <br />
                   <span className="text-xs">
@@ -279,6 +357,11 @@ export default function DriversPage() {
                       size={36}
                     />
                     <span className="font-semibold">{d.fullName}</span>
+                    {d.kind === 'courier' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200">
+                        <Bike size={11} /> Kuryer
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="td font-mono text-xs">{d.phone}</td>
@@ -321,16 +404,20 @@ export default function DriversPage() {
                     so'm
                   </span>
                 </td>
+                <td className="td text-right tabular-nums font-semibold">{d.ordersCount ?? 0}</td>
                 <td className="td text-neutral-500 text-xs">
-                  {new Date(d.createdAt).toLocaleDateString('uz', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: '2-digit',
-                  })}
+                  {fmtDate(d.createdAt)}
                 </td>
                 <td className="td">
                   <div className="flex gap-1 justify-end">
-                    {!d.isApproved ? (
+                    {showDeleted ? (
+                      <button
+                        onClick={() => restore.mutate(d.id)}
+                        className="h-8 px-3 rounded-lg flex items-center gap-1.5 bg-green-600 text-white text-xs font-bold hover:bg-green-700"
+                      >
+                        <RotateCcw size={14} /> Tiklash
+                      </button>
+                    ) : !d.isApproved ? (
                       <button
                         onClick={() => approve.mutate(d.id)}
                         title="Tasdiqlash"
@@ -386,6 +473,20 @@ export default function DriversPage() {
                         <ShieldCheck size={16} />
                       </button>
                     )}
+                    {!showDeleted && (
+                      <button
+                        onClick={() => branded.mutate({ id: d.id, branded: !d.isBranded })}
+                        className={
+                          'w-8 h-8 rounded-lg flex items-center justify-center ' +
+                          (d.isBranded
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'hover:bg-blue-50 text-blue-700')
+                        }
+                        title={d.isBranded ? 'Brenddan olish' : 'Brendli qilish'}
+                      >
+                        <Crown size={16} />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (confirm(`${d.fullName} o'chirilsinmi?`))
@@ -422,6 +523,7 @@ function CreateDriverModal({ onClose }: { onClose: () => void }) {
   const [phone, setPhone] = useState('+998');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState(genPassword());
+  const [kind, setKind] = useState<'taxi' | 'courier'>('taxi');
   const [created, setCreated] = useState<
     { password: string; phone: string; email: string | null } | null
   >(null);
@@ -439,9 +541,16 @@ function CreateDriverModal({ onClose }: { onClose: () => void }) {
         fullName: fullName.trim(),
         phone: phone.replace(/\s/g, ''),
         password,
+        kind,
       };
       if (email.trim()) body.email = email.trim();
-      return (await api.post('/admin/drivers', body)).data;
+      const res = (await api.post('/admin/drivers', body)).data;
+      // A revived (previously deleted) account keeps its old type — fix it.
+      const id = res?.driver?.id;
+      if (id && res.driver.kind && res.driver.kind !== kind) {
+        await api.patch(`/admin/drivers/${id}/kind`, { kind }).catch(() => undefined);
+      }
+      return res;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['drivers'] });
@@ -457,6 +566,37 @@ function CreateDriverModal({ onClose }: { onClose: () => void }) {
     <Modal onClose={onClose} title="Yangi haydovchi">
       {!created ? (
         <div className="space-y-4">
+          {/* Not a <label>: clicking the caption would press the first button. */}
+          <div className="mb-2">
+            <span className="text-sm text-slate-500">Turi</span>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {(
+                [
+                  ['taxi', 'Taksi', CarFront],
+                  ['courier', 'Kuryer', Bike],
+                ] as const
+              ).map(([value, label, Icon]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setKind(value)}
+                  className={
+                    'h-10 rounded-lg border text-sm font-bold inline-flex items-center justify-center gap-1.5 ' +
+                    (kind === value
+                      ? 'bg-ink text-gold border-ink'
+                      : 'bg-white text-neutral-500 border-line')
+                  }
+                >
+                  <Icon size={16} /> {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {kind === 'courier'
+                ? 'Kuryer faqat ovqat yetkazish buyurtmalarini oladi (mashina shart emas).'
+                : 'Taksi haydovchi safarlar bilan birga ovqat yetkazishni ham olishi mumkin.'}
+            </p>
+          </div>
           <Field label="Ism familiya">
             <input
               value={fullName}

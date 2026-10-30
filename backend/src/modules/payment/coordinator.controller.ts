@@ -97,18 +97,19 @@ export class CoordinatorController {
     },
   ) {
     const amount = Number(body.amount);
-    const type =
-      amount > 0
-        ? BalanceTxType.TOPUP
-        : amount < 0
-          ? BalanceTxType.WITHDRAW
-          : BalanceTxType.ADJUSTMENT;
+    // Coordinators only top up. Taking money back from a driver or client
+    // is an admin-only action.
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException(
+        'Koordinator faqat pul tashlay oladi. Yechish admin orqali.',
+      );
+    }
     const res = await this.balance.adjustFromCoordinator({
       coordId: user.sub,
       driverId: body.driverId,
       clientId: body.clientId,
       amount,
-      type,
+      type: BalanceTxType.TOPUP,
       note: body.note ?? null,
     });
     // Best-effort audit log so the coordinator can see their own
@@ -152,6 +153,11 @@ export class CoordinatorController {
     if (body.driverId && body.clientId) {
       throw new BadRequestException(
         'Bir vaqtning o‘zida haydovchi va klient tanlanmasin',
+      );
+    }
+    if (!(Number(body.amount) > 0)) {
+      throw new BadRequestException(
+        'Koordinator faqat pul tashlay oladi. Yechish admin orqali.',
       );
     }
     return this.payment.submit({

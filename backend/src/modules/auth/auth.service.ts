@@ -14,6 +14,7 @@ import { Driver } from '../driver/driver.entity';
 import { Admin } from '../admin/admin.entity';
 import { DriverLoginDto } from './dto/driver-login.dto';
 import { DriverRegisterDto } from './dto/driver-register.dto';
+import { FoodService } from '../food/food.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { PasswordResetToken } from './password-reset-token.entity';
@@ -26,6 +27,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    private readonly food: FoodService,
     @InjectRepository(Driver) private readonly drivers: Repository<Driver>,
     @InjectRepository(Admin) private readonly admins: Repository<Admin>,
     @InjectRepository(PasswordResetToken)
@@ -49,19 +51,39 @@ export class AuthService {
 
   async driverRegister(dto: DriverRegisterDto) {
     const phone = this.normalizePhone(dto.phone);
-    const existing = await this.drivers.findOne({ where: { phone } });
-    if (existing) {
+    const existing = await this.drivers.findOne({
+      where: { phone },
+      withDeleted: true,
+    });
+    if (existing && !existing.deletedAt) {
       throw new BadRequestException('Bu telefon allaqachon ro‘yxatda');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const driver = this.drivers.create({
-      fullName: dto.fullName.trim(),
-      phone,
-      passwordHash,
-      isActive: true,
-    });
-    const saved = await this.drivers.save(driver);
+    let saved: Driver;
+    if (existing) {
+      // The phone belongs to a driver the admin removed earlier: revive the
+      // row (unique phone) as a fresh, not-yet-approved registration.
+      await this.drivers.restore(existing.id);
+      await this.drivers.update(existing.id, {
+        fullName: dto.fullName.trim(),
+        passwordHash,
+        isActive: true,
+        isApproved: false,
+        isOnline: false,
+        contractAcceptedAt: new Date(),
+      });
+      saved = await this.drivers.findOneOrFail({ where: { id: existing.id } });
+    } else {
+      const driver = this.drivers.create({
+        fullName: dto.fullName.trim(),
+        phone,
+        passwordHash,
+        isActive: true,
+        contractAcceptedAt: new Date(),
+      });
+      saved = await this.drivers.save(driver);
+    }
 
     const payload: JwtPayload = {
       sub: saved.id,
@@ -95,11 +117,52 @@ export class AuthService {
     };
   }
 
+  async changeAdminPassword(
+    user: JwtPayload,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    if (user.role !== 'admin' && user.role !== 'coordinator') {
+      throw new UnauthorizedException();
+    }
+    if (newPassword.length < 6) {
+      throw new BadRequestException('Yangi parol kamida 6 belgi bo‘lsin');
+    }
+    const admin = await this.admins.findOne({ where: { id: user.sub } });
+    if (!admin) throw new UnauthorizedException();
+    const ok = await bcrypt.compare(currentPassword, admin.passwordHash);
+    if (!ok) throw new BadRequestException('Joriy parol noto‘g‘ri');
+    admin.passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.admins.save(admin);
+    return { ok: true };
+  }
+
+  /**
+   * Usernames are stored lower-case (the coordinator form lower-cases them),
+   * so match case-insensitively and ignore stray spaces — "Kali1 " must find
+   * "kali1".
+   */
+  private findAdminByUsername(raw: string) {
+    const name = (raw ?? '').trim().toLowerCase();
+    return this.admins
+      .createQueryBuilder('a')
+      .where('LOWER(TRIM(a.username)) = :name', { name })
+      .orderBy('a.createdAt', 'ASC')
+      .getOne();
+  }
+
   async adminLogin(dto: AdminLoginDto) {
-    const admin = await this.admins.findOne({
-      where: { username: dto.username },
-    });
-    if (!admin) throw new UnauthorizedException('Invalid credentials');
+    const admin = await this.findAdminByUsername(dto.username);
+    if (!admin) {
+      // Not an admin/coordinator — maybe a kitchen (oshxona panel).
+      const kitchen = await this.food.verifyKitchenLogin(dto.username, dto.password);
+      if (!kitchen) throw new UnauthorizedException('Invalid credentials');
+      const payload: JwtPayload = { sub: kitchen.id, role: 'kitchen', username: kitchen.username };
+      return {
+        access_token: await this.jwt.signAsync(payload, { expiresIn: '30d' }),
+        admin: { id: kitchen.id, username: kitchen.username, role: 'kitchen', name: kitchen.name },
+      };
+    }
     const ok = await bcrypt.compare(dto.password, admin.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
@@ -160,9 +223,7 @@ export class AuthService {
     password: string;
   }) {
     const tgId = await this.verifyInitDataAndGetUserId(input.initData);
-    const admin = await this.admins.findOne({
-      where: { username: input.username },
-    });
+    const admin = await this.findAdminByUsername(input.username);
     if (!admin) throw new UnauthorizedException('Username yoki parol noto‘g‘ri');
     const ok = await bcrypt.compare(input.password, admin.passwordHash);
     if (!ok) throw new UnauthorizedException('Username yoki parol noto‘g‘ri');
@@ -266,7 +327,7 @@ export class AuthService {
     if (driver.email) {
       await this.mailer.send({
         to: driver.email,
-        subject: 'OZIMIZNI TAXI — Parolni tiklash kodi',
+        subject: 'Moviy Taxi — Parolni tiklash kodi',
         text:
           `Salom, ${driver.fullName}!\n\n` +
           `Parolingizni tiklash kodi: ${code}\n` +
@@ -318,6 +379,8 @@ export class AuthService {
       carColor: driver.carColor,
       carPlate: driver.carPlate,
       carPhotoUrl: driver.carPhotoUrl,
+      contractAcceptedAt: driver.contractAcceptedAt,
+      approvedAt: driver.approvedAt,
     };
   }
 }

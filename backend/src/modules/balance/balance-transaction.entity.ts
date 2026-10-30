@@ -15,6 +15,8 @@ export enum BalanceTxType {
   TOPUP = 'TOPUP',
   WITHDRAW = 'WITHDRAW',
   ADJUSTMENT = 'ADJUSTMENT',
+  // Client paid part of a ride from their bonus balance.
+  BONUS = 'BONUS',
 }
 
 @Entity('balance_transactions')

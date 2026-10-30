@@ -9,6 +9,8 @@ export interface CreateFeedbackInput {
   firstName?: string | null;
   phone?: string | null;
   text: string;
+  photoUrl?: string | null;
+  clientId?: string | null;
 }
 
 @Injectable()
@@ -26,8 +28,25 @@ export class FeedbackService {
         firstName: input.firstName ?? null,
         phone: input.phone ?? null,
         text: input.text.slice(0, 4000),
+        photoUrl: input.photoUrl ?? null,
+        clientId: input.clientId ?? null,
       }),
     );
+  }
+
+  async findOne(id: string): Promise<Feedback> {
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Topilmadi');
+    return row;
+  }
+
+  /** Store the admin's answer (delivery to Telegram happens in the caller). */
+  async reply(id: string, text: string): Promise<Feedback> {
+    const row = await this.findOne(id);
+    row.replyText = text.slice(0, 4000);
+    row.repliedAt = new Date();
+    row.isRead = true;
+    return this.repo.save(row);
   }
 
   list(filter: { unreadOnly?: boolean; limit?: number } = {}) {

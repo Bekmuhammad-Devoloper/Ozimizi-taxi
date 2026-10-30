@@ -18,6 +18,7 @@ import { BalanceTxType } from '../balance/balance-transaction.entity';
 import { MailerService } from '../mailer/mailer.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TariffService } from '../tariff/tariff.service';
+import { FARE_ROUND_TO } from '../../common/utils/fare';
 
 @Injectable()
 export class DriverService {
@@ -37,6 +38,11 @@ export class DriverService {
       pricePerKm: Number(t.pricePerKm),
       minimumFare: Number(t.minimumFare),
       commissionPerOrder: Number(t.commissionPerOrder),
+      commissionPercent: Number(t.commissionPercent ?? 0),
+      tiers: t.tiers ?? [],
+      waitingFreeMinutes: Number(t.waitingFreeMinutes ?? 0),
+      waitingPricePerMinute: Number(t.waitingPricePerMinute ?? 0),
+      roundTo: FARE_ROUND_TO,
     };
   }
 
@@ -83,11 +89,47 @@ export class DriverService {
   }
 
   async updateLocation(driverId: string, lat: number, lng: number) {
-    await this.repo.update(driverId, { currentLat: lat, currentLng: lng });
+    await this.orderService.handleLocationPing(driverId, lat, lng);
+    return { ok: true };
   }
 
   acceptOrder(driverId: string, orderId: string) {
     return this.orderService.accept(driverId, orderId);
+  }
+
+  declineOrder(driverId: string, orderId: string) {
+    return this.orderService.declineOffer(driverId, orderId);
+  }
+
+  startStreetRide(driverId: string, lat: number, lng: number) {
+    return this.orderService.startStreetRide(driverId, lat, lng);
+  }
+
+  /** The app reports its version on start (admin sees outdated phones). */
+  async reportVersion(driverId: string, version?: string, platform?: string) {
+    const v = String(version ?? '').trim().slice(0, 32) || 'unknown';
+    const p = String(platform ?? '').trim().slice(0, 16) || null;
+    await this.repo.update(driverId, { appVersion: v, appPlatform: p, appSeenAt: new Date() });
+    return { ok: true };
+  }
+
+  ringOrder(driverId: string, orderId: string, via: string) {
+    return this.orderService.markRinging(driverId, orderId, via);
+  }
+
+  currentOffer(driverId: string) {
+    return this.orderService.currentOffer(driverId);
+  }
+
+  /** Background service long-poll: new orders etc. while the app is closed. */
+  async inbox(driverId: string, after: number | null) {
+    const d = await this.repo.findOne({ where: { id: driverId }, select: { id: true, isOnline: true, isActive: true } });
+    if (!d || !d.isActive || !d.isOnline) {
+      // Went offline (maybe from another device) — the phone stops its service.
+      return { offline: true, last: 0, events: [] };
+    }
+    const res = await this.realtime.waitInbox(driverId, after, 25_000);
+    return { offline: false, ...res };
   }
 
   onTheWay(driverId: string, orderId: string) {
@@ -100,6 +142,10 @@ export class DriverService {
 
   start(driverId: string, orderId: string) {
     return this.orderService.transition(driverId, orderId, OrderStatus.IN_PROGRESS);
+  }
+
+  setWaiting(driverId: string, orderId: string, on: boolean) {
+    return this.orderService.setWaiting(driverId, orderId, on);
   }
 
   complete(driverId: string, orderId: string, dto: CompleteOrderDto) {
@@ -136,28 +182,55 @@ export class DriverService {
     const phone = dto.phone.startsWith('+') ? dto.phone : '+' + dto.phone;
     const email = dto.email?.trim().toLowerCase() || null;
 
-    const phoneExists = await this.repo.findOne({ where: { phone } });
-    if (phoneExists) {
+    // Soft-deleted rows keep their (unique) phone, so a removed driver
+    // coming back would hit the DB constraint — revive that row instead.
+    const phoneExists = await this.repo.findOne({
+      where: { phone },
+      withDeleted: true,
+    });
+    if (phoneExists && !phoneExists.deletedAt) {
       throw new BadRequestException('Telefon allaqachon ro‘yxatda');
     }
     if (email) {
-      const emailExists = await this.repo.findOne({ where: { email } });
-      if (emailExists) {
+      const emailExists = await this.repo.findOne({
+        where: { email },
+        withDeleted: true,
+      });
+      if (emailExists && emailExists.id !== phoneExists?.id) {
         throw new BadRequestException('Email allaqachon ro‘yxatda');
       }
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const driver = this.repo.create({
-      fullName: dto.fullName,
-      phone,
-      email,
-      passwordHash,
-      // Admin-created drivers are trusted by definition — they skip the
-      // approval queue. Telegram self-registrations stay pending.
-      isApproved: true,
-    });
-    const saved = await this.repo.save(driver);
+    let saved: Driver;
+    if (phoneExists) {
+      // Revived account: fresh credentials/profile, balance stays as is
+      // (it was drained to the treasury on deletion).
+      await this.repo.restore(phoneExists.id);
+      await this.repo.update(phoneExists.id, {
+        fullName: dto.fullName,
+        email,
+        passwordHash,
+        isActive: true,
+        isApproved: true,
+        approvedAt: new Date(),
+        isOnline: false,
+      });
+      saved = await this.repo.findOneOrFail({ where: { id: phoneExists.id } });
+    } else {
+      const driver = this.repo.create({
+        fullName: dto.fullName,
+        phone,
+        email,
+        passwordHash,
+        // Admin-created drivers are trusted by definition — they skip the
+        // approval queue. Telegram self-registrations stay pending.
+        isApproved: true,
+        approvedAt: new Date(),
+        kind: dto.kind === 'courier' ? 'courier' : 'taxi',
+      });
+      saved = await this.repo.save(driver);
+    }
 
     if (email) {
       const appUrl =
@@ -169,7 +242,7 @@ export class DriverService {
       void this.mailer
         .send({
           to: email,
-          subject: 'OZIMIZNI TAXI — Haydovchi hisobi yaratildi',
+          subject: 'Moviy Taxi — Haydovchi hisobi yaratildi',
           text:
             `Salom, ${saved.fullName}!\n\n` +
             `Sizning haydovchi hisobingiz yaratildi.\n\n` +
@@ -207,15 +280,35 @@ export class DriverService {
     }));
   }
 
+  /** Soft-deleted drivers, newest deletion first. */
+  listDeleted() {
+    return this.repo
+      .createQueryBuilder('d')
+      .withDeleted()
+      .where('d.deleted_at IS NOT NULL')
+      .orderBy('d.deleted_at', 'DESC')
+      .getMany();
+  }
+
+  /** Undo softDelete: the account comes back blocked-off → active, offline. */
+  async restore(id: string): Promise<Driver> {
+    const driver = await this.repo.findOne({ where: { id }, withDeleted: true });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (!driver.deletedAt) return driver;
+    await this.repo.restore(id);
+    await this.repo.update(id, { isActive: true, isOnline: false });
+    return this.repo.findOneOrFail({ where: { id } });
+  }
+
   async softDelete(id: string) {
     const driver = await this.repo.findOne({ where: { id } });
     if (!driver) throw new NotFoundException('Driver not found');
     // Closed-loop: whatever the driver was holding goes back to the treasury
     // before we deactivate them.
     await this.balance.drainDriverToTreasury(id, 'Driver removed by admin');
-    driver.isActive = false;
-    driver.isOnline = false;
-    await this.repo.save(driver);
+    // update(), not save(driver): the entity loaded above still carries the
+    // pre-drain balance and would write it back over the zeroed one.
+    await this.repo.update(id, { isActive: false, isOnline: false });
     await this.repo.softDelete(id);
     return { ok: true };
   }
@@ -225,6 +318,7 @@ export class DriverService {
     if (!driver) throw new NotFoundException('Driver not found');
     if (driver.isApproved) return driver;
     driver.isApproved = true;
+    driver.approvedAt = new Date();
     return this.repo.save(driver);
   }
 
@@ -252,6 +346,20 @@ export class DriverService {
     return this.repo.save(driver);
   }
 
+  async setBranded(id: string, branded: boolean): Promise<Driver> {
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    driver.isBranded = branded;
+    return this.repo.save(driver);
+  }
+
+  /** Driver ticked "I agree" to the contract in the app. */
+  async acceptContract(driverId: string) {
+    const now = new Date();
+    await this.repo.update({ id: driverId }, { contractAcceptedAt: now });
+    return { contractAcceptedAt: now.toISOString() };
+  }
+
   async adjustBalance(id: string, amount: number, note?: string) {
     const driver = await this.repo.findOne({ where: { id } });
     if (!driver) throw new NotFoundException('Driver not found');
@@ -269,14 +377,81 @@ export class DriverService {
     });
   }
 
+  /**
+   * Admin resets a driver's password (we never keep passwords in clear text,
+   * so this is the only way the admin can hand a driver known credentials).
+   * Returns the new password once; the caller shows/sends it.
+   */
+  async adminSetPassword(id: string, password?: string | null) {
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    const clean = (password ?? '').trim();
+    if (clean && clean.length < 6) {
+      throw new BadRequestException('Parol kamida 6 belgi bo‘lsin');
+    }
+    const next = clean || String(Math.floor(100000 + Math.random() * 900000));
+    driver.passwordHash = await bcrypt.hash(next, 10);
+    driver.passwordChangedAt = new Date();
+    await this.repo.save(driver);
+    return { password: next, phone: driver.phone, changedAt: driver.passwordChangedAt };
+  }
+
+  /** Admin edits the driver's documents (license number/expiry, photos). */
+  async updateDocuments(
+    id: string,
+    patch: {
+      licenseNumber?: string | null;
+      licenseExpiresAt?: string | null;
+      licensePhotoUrl?: string | null;
+      techPassportPhotoUrl?: string | null;
+      carPhotoUrl?: string | null;
+      avatarUrl?: string | null;
+    },
+  ) {
+    const driver = await this.repo.findOne({ where: { id } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (patch.licenseNumber !== undefined) {
+      driver.licenseNumber = (patch.licenseNumber ?? '').trim().slice(0, 64) || null;
+    }
+    if (patch.licenseExpiresAt !== undefined) {
+      const v = (patch.licenseExpiresAt ?? '').trim();
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        throw new BadRequestException('Sana YYYY-MM-DD ko‘rinishida bo‘lsin');
+      }
+      driver.licenseExpiresAt = v || null;
+    }
+    for (const k of ['licensePhotoUrl', 'techPassportPhotoUrl', 'carPhotoUrl', 'avatarUrl'] as const) {
+      if (patch[k] !== undefined) driver[k] = patch[k] || null;
+    }
+    return this.repo.save(driver);
+  }
+
+  /** Admin: taxi ↔ courier, and whether a taxi driver also takes deliveries. */
+  async setKind(id: string, input: { kind?: string; acceptDelivery?: boolean }) {
+    const d = await this.repo.findOne({ where: { id } });
+    if (!d) throw new NotFoundException('Driver not found');
+    if (input.kind !== undefined) {
+      if (!['taxi', 'courier'].includes(input.kind)) throw new BadRequestException('Turi: taxi yoki courier');
+      d.kind = input.kind as 'taxi' | 'courier';
+    }
+    if (input.acceptDelivery !== undefined) d.acceptDelivery = !!input.acceptDelivery;
+    return this.repo.save(d);
+  }
+
   async detail(id: string) {
     const driver = await this.repo.findOne({ where: { id } });
     if (!driver) throw new NotFoundException('Driver not found');
     const transactions = await this.balance.list(id, 100);
-    return { driver, transactions };
+    const [{ n }] = await this.repo.query(
+      `SELECT COUNT(*)::int AS n FROM orders WHERE driver_id = $1 AND status = 'COMPLETED'`,
+      [id],
+    );
+    return { driver, transactions, ordersCompleted: Number(n ?? 0) };
   }
 
   isProfileComplete(driver: Driver): boolean {
+    // Couriers (foot/bike/moto) only need a photo.
+    if (driver.kind === 'courier') return !!driver.avatarUrl;
     return !!(
       driver.avatarUrl &&
       driver.carModel &&
@@ -299,6 +474,7 @@ export class DriverService {
       driver.carPlate = dto.carPlate.trim().toUpperCase();
     if (dto.avatarUrl !== undefined) driver.avatarUrl = dto.avatarUrl;
     if (dto.carPhotoUrl !== undefined) driver.carPhotoUrl = dto.carPhotoUrl;
+    if (dto.acceptDelivery !== undefined) driver.acceptDelivery = !!dto.acceptDelivery;
 
     return this.repo.save(driver);
   }

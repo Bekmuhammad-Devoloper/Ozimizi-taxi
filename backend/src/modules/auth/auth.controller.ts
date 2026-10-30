@@ -1,5 +1,10 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../../common/decorators/current-user.decorator';
 import { DriverLoginDto } from './dto/driver-login.dto';
 import { DriverRegisterDto } from './dto/driver-register.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
@@ -23,6 +28,21 @@ export class AuthController {
   @Post('admin/login')
   adminLogin(@Body() dto: AdminLoginDto) {
     return this.auth.adminLogin(dto);
+  }
+
+  /** Logged-in admin or coordinator changes their own password. */
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  @Post('change-password')
+  changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.auth.changeAdminPassword(
+      user,
+      body?.currentPassword ?? '',
+      body?.newPassword ?? '',
+    );
   }
 
   @HttpCode(200)

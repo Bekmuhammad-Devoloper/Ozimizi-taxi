@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, X as XIcon, Clock, Inbox } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { fmtDateTime } from '@/lib/format';
 
 type Status = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -108,12 +109,7 @@ export default function PaymentRequestsPage() {
                   </span>
                 </p>
                 <p className="text-xs text-neutral-500">
-                  {new Date(r.createdAt).toLocaleString('uz', {
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
+                  {fmtDateTime(r.createdAt)}{' '}
                   ·{' '}
                   {r.driverRequester ? (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gold/15 text-gold-deep font-bold uppercase tracking-wide text-[10px]">
@@ -131,12 +127,7 @@ export default function PaymentRequestsPage() {
                     {r.status === 'APPROVED' ? 'Tasdiqladi' : 'Rad etdi'}:{' '}
                     {r.decider.username} ·{' '}
                     {r.decidedAt
-                      ? new Date(r.decidedAt).toLocaleString('uz', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
+                      ? fmtDateTime(r.decidedAt)
                       : ''}
                   </p>
                 )}

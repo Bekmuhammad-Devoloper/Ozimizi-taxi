@@ -33,6 +33,16 @@ export interface OrderEventPayload {
   etaMinutes?: number;
 }
 
+/** Referral bonus paid after the invited client's first completed ride. */
+export interface ReferralPaidPayload {
+  orderId: string;
+  clientId: string;
+  clientName: string;
+  clientBonus: number;
+  referrerId: string;
+  referrerBonus: number;
+}
+
 @Injectable()
 export class OrderEvents {
   private readonly bus = new EventEmitter();
@@ -43,5 +53,13 @@ export class OrderEvents {
 
   on(name: OrderEventName, listener: (payload: OrderEventPayload) => void) {
     this.bus.on(name, listener);
+  }
+
+  emitReferralPaid(payload: ReferralPaidPayload) {
+    this.bus.emit('referral.paid', payload);
+  }
+
+  onReferralPaid(listener: (payload: ReferralPaidPayload) => void) {
+    this.bus.on('referral.paid', listener);
   }
 }

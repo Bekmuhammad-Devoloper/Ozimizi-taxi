@@ -7,7 +7,6 @@ import {
   Check,
   X as XIcon,
   ArrowUpRight,
-  ArrowDownRight,
   Search,
   Inbox,
   Wallet,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { fmtDateTime } from '@/lib/format';
 import { useTelegramWebApp } from '@/hooks/useTelegramWebApp';
 
 interface DriverLite {
@@ -55,7 +55,6 @@ export default function CoordinatorPage() {
   // Mini-App auto-login. Outside Telegram this is a no-op.
   const tgWebApp = useTelegramWebApp();
   const [target, setTarget] = useState<TargetType>('driver');
-  const [mode, setMode] = useState<'topup' | 'withdraw'>('topup');
   const [selectedId, setSelectedId] = useState('');
   const [query, setQuery] = useState('');
   const [amount, setAmount] = useState('');
@@ -96,13 +95,13 @@ export default function CoordinatorPage() {
       qc.invalidateQueries({ queryKey: ['coordinator', 'me'] }),
   });
 
-  const { data: drivers } = useQuery({
+  const { data: drivers, isError: driversError, refetch: refetchDrivers } = useQuery({
     queryKey: ['coordinator', 'drivers'],
     queryFn: async () =>
       (await api.get<DriverLite[]>('/coordinator/drivers')).data,
   });
 
-  const { data: clients } = useQuery({
+  const { data: clients, isError: clientsError, refetch: refetchClients } = useQuery({
     queryKey: ['coordinator', 'clients'],
     queryFn: async () =>
       (await api.get<ClientLite[]>('/coordinator/clients')).data,
@@ -150,8 +149,8 @@ export default function CoordinatorPage() {
           target === 'driver' ? 'Haydovchini tanlang' : 'Klientni tanlang',
         );
       if (!Number.isFinite(a) || a <= 0) throw new Error('Summa noto‘g‘ri');
-      const signed = mode === 'topup' ? a : -a;
-      const body: any = { amount: signed, note };
+      // Coordinators can only top up; withdrawals are admin-only.
+      const body: any = { amount: a, note };
       if (target === 'driver') body.driverId = selectedId;
       else body.clientId = selectedId;
       // Direct transfer from coordinator's purse — no admin approval.
@@ -279,6 +278,27 @@ export default function CoordinatorPage() {
         </div>
       )}
 
+      {me?.username && (
+        <div className="card p-3 mb-3 flex items-center gap-2 text-sm">
+          <span className="text-neutral-500">Koordinator:</span>
+          <b className="font-mono">{me.username}</b>
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm('Hisobdan chiqilsinmi? Boshqa koordinator bilan kirishingiz mumkin bo‘ladi.')) return;
+              void api.post('/coordinator/wallet-unlink').catch(() => undefined).finally(() => {
+                document.cookie = 'admin_token=; Max-Age=0; path=/';
+                const inTg = !!(window as any).Telegram?.WebApp?.initData;
+                window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}${inTg ? '/tg' : '/login'}`;
+              });
+            }}
+            className="ml-auto text-xs font-semibold text-red-600 hover:underline"
+          >
+            Chiqish / boshqa hisob
+          </button>
+        </div>
+      )}
+
       {/* KPI ROW */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <Kpi
@@ -336,29 +356,11 @@ export default function CoordinatorPage() {
             </button>
           </div>
 
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => setMode('topup')}
-              className={
-                'flex-1 h-10 rounded-lg font-bold text-sm flex items-center justify-center gap-1 ' +
-                (mode === 'topup'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-neutral-100 text-neutral-500')
-              }
-            >
-              <ArrowUpRight size={16} /> Pul tashlash
-            </button>
-            <button
-              onClick={() => setMode('withdraw')}
-              className={
-                'flex-1 h-10 rounded-lg font-bold text-sm flex items-center justify-center gap-1 ' +
-                (mode === 'withdraw'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-neutral-100 text-neutral-500')
-              }
-            >
-              <ArrowDownRight size={16} /> Yechish
-            </button>
+          <div className="flex items-center gap-2 mb-4 px-3 h-10 rounded-lg bg-green-50 text-green-700 text-sm font-bold">
+            <ArrowUpRight size={16} /> Pul tashlash
+            <span className="ml-auto text-[11px] font-medium text-green-700/70">
+              yechish — faqat admin
+            </span>
           </div>
 
           <Field label={target === 'driver' ? 'Haydovchi' : 'Klient'}>
@@ -404,6 +406,15 @@ export default function CoordinatorPage() {
                     className="input pl-9"
                   />
                 </div>
+                {(target === 'driver' ? driversError : clientsError) && (
+                  <button
+                    type="button"
+                    onClick={() => (target === 'driver' ? refetchDrivers() : refetchClients())}
+                    className="mt-1 w-full p-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg"
+                  >
+                    Ro‘yxat yuklanmadi — qayta urinish uchun bosing
+                  </button>
+                )}
                 {(query || candidates.length > 0) && (
                   <ul className="mt-1 max-h-56 overflow-y-auto border border-line rounded-lg divide-y divide-line">
                     {candidates.length === 0 ? (
@@ -415,11 +426,20 @@ export default function CoordinatorPage() {
                         <li key={x.id}>
                           <button
                             type="button"
+                            onPointerDown={(e) => {
+                              // Select before the input blurs: on phones the
+                              // keyboard closing shifts the list and the
+                              // click would land on nothing.
+                              e.preventDefault();
+                              setSelectedId(x.id);
+                              setQuery('');
+                              (document.activeElement as HTMLElement | null)?.blur?.();
+                            }}
                             onClick={() => {
                               setSelectedId(x.id);
                               setQuery('');
                             }}
-                            className="w-full px-3 py-2 text-left hover:bg-neutral-50 flex justify-between items-center gap-2"
+                            className="w-full px-3 py-3 text-left hover:bg-neutral-50 active:bg-gold/20 flex justify-between items-center gap-2"
                           >
                             <span className="font-medium text-sm truncate">
                               {x.name}
@@ -494,12 +514,7 @@ export default function CoordinatorPage() {
                       {r.driver?.fullName ?? r.client?.firstName ?? '—'}
                     </p>
                     <p className="text-xs text-neutral-500">
-                      {new Date(r.createdAt).toLocaleString('uz', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {fmtDateTime(r.createdAt)}
                       {r.note ? ' · ' + r.note : ''}
                     </p>
                   </div>
@@ -564,12 +579,7 @@ export default function CoordinatorPage() {
                       {r.driver?.fullName ?? r.client?.firstName ?? '—'}
                     </p>
                     <p className="text-xs text-neutral-500">
-                      {new Date(r.createdAt).toLocaleString('uz', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {fmtDateTime(r.createdAt)}
                       {r.note ? ' · ' + r.note : ''}
                     </p>
                   </div>

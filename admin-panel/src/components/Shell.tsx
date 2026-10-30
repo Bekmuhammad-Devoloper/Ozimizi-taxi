@@ -2,6 +2,7 @@
 import { Menu } from 'lucide-react';
 import Image from 'next/image';
 import { Sidebar } from './Sidebar';
+import { OrderEventFeed } from './OrderEventFeed';
 import { useUiStore } from '@/stores/ui';
 
 export function Shell({
@@ -31,17 +32,17 @@ export function Shell({
             <Menu size={22} />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md overflow-hidden ring-1 ring-gold/50">
+            <div className="w-9 h-9 rounded-lg overflow-hidden ring-1 ring-gold/60">
               <Image
-                src="/logo.jpg"
+                src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/logo.jpg`}
                 alt=""
-                width={28}
-                height={28}
+                width={36}
+                height={36}
                 className="w-full h-full object-cover"
               />
             </div>
             <span className="text-sm font-bold tracking-wide">
-              OZIMIZNI <span className="text-gold">TAXI</span>
+              MOVIY <span className="text-gold">TAXI</span>
             </span>
           </div>
           <span className="w-10" />
@@ -79,6 +80,7 @@ export function Shell({
 
         <div className="p-4 lg:p-8">{children}</div>
       </main>
+      <OrderEventFeed />
     </div>
   );
 }

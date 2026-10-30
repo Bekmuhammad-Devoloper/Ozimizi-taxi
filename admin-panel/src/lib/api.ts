@@ -16,7 +16,16 @@ api.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       Cookies.remove('admin_token');
-      if (typeof window !== 'undefined') window.location.href = '/login';
+      if (typeof window !== 'undefined') {
+        // Inside the Telegram Mini App go back to the Telegram login page
+        // (it can re-authenticate from initData), not the web login.
+        const inTg = !!(window as any).Telegram?.WebApp?.initData;
+        const base = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+        const target = `${base}${inTg ? '/tg' : '/login'}`;
+        if (!window.location.pathname.endsWith(inTg ? '/tg' : '/login')) {
+          window.location.href = target;
+        }
+      }
     }
     return Promise.reject(err);
   },

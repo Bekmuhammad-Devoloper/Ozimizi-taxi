@@ -1,22 +1,23 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+// Self-hosted Inter (variable): no network needed at build time.
+const inter = localFont({
+  src: '../fonts/InterVariable.ttf',
+  weight: '100 900',
   display: 'swap',
   variable: '--font-inter',
 });
 
 export const metadata: Metadata = {
-  title: 'OZIMIZNI TAXI',
-  description: 'OZIMIZNI TAXI — Haydovchi ilovasi',
+  title: 'Moviy Taxi',
+  description: 'Moviy Taxi — Haydovchi ilovasi',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'OZIMIZNI',
+    title: 'Moviy Taxi',
   },
   other: {
     'mobile-web-app-capable': 'yes',

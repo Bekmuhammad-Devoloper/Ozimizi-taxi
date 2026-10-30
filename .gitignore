@@ -29,3 +29,18 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# next-pwa output (generated at build time on the server)
+driver-pwa/public/sw.js
+driver-pwa/public/workbox-*.js
+
+# Android (Capacitor) build output
+driver-android/android/build/
+driver-android/android/app/build/
+driver-android/android/.gradle/
+driver-android/android/local.properties
+driver-android/android/app/release/
+
+# VPS root password for deploy/rrun.py (never commit)
+deploy/.eskiz.pass
+deploy/code.tgz

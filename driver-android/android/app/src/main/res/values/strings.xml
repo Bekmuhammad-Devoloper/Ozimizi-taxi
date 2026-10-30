@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Moviy Taxi Haydovchi</string>
+    <string name="title_activity_main">Moviy Taxi Haydovchi</string>
+    <string name="package_name">uz.moviytaxi.driver</string>
+    <string name="custom_url_scheme">uz.moviytaxi.driver</string>
+
+    <!-- @capacitor-community/background-geolocation: persistent notification shown
+         while the ride distance is being tracked in the background. -->
+    <string name="capacitor_background_geolocation_notification_channel_name">Safar kuzatuvi (GPS)</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_notify</string>
+    <string name="capacitor_background_geolocation_notification_color">#3b9bff</string>
+</resources>

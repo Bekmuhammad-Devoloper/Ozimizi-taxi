@@ -12,14 +12,14 @@ export function BrandHeader({ subtitle }: { subtitle?: string }) {
         className="absolute inset-0 opacity-30 pointer-events-none"
         style={{
           background:
-            'radial-gradient(circle at 50% 0%, rgba(250,204,21,0.35), transparent 60%)',
+            'radial-gradient(circle at 50% 0%, rgba(59,155,255,0.35), transparent 60%)',
         }}
       />
       <div className="relative flex flex-col items-center">
         <div className="w-20 h-20 mb-4 rounded-2xl overflow-hidden ring-2 ring-gold/50 shadow-xl shadow-gold/20">
           <Image
             src="/logo.jpg"
-            alt="OZIMIZNI TAXI"
+            alt="MOVIY TAXI"
             width={80}
             height={80}
             className="w-full h-full object-cover"
@@ -27,7 +27,7 @@ export function BrandHeader({ subtitle }: { subtitle?: string }) {
           />
         </div>
         <h1 className="text-lg font-extrabold tracking-[0.18em] text-gold">
-          OZIMIZNI TAXI
+          MOVIY TAXI
         </h1>
         {subtitle && (
           <p className="text-sm text-neutral-300 mt-1">{subtitle}</p>

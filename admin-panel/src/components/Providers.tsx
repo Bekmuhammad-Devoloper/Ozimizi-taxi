@@ -1,6 +1,8 @@
 'use client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+// Side effect: start listening for Chrome's install prompt on every page.
+import '@/lib/installPrompt';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [qc] = useState(

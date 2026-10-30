@@ -8,9 +8,9 @@ const config: Config = {
         ink: '#0a0a0a',
         line: '#e5e5e5',
         gold: {
-          DEFAULT: '#facc15',
-          dark: '#ca8a04',
-          deep: '#854d0e',
+          DEFAULT: '#3b9bff', // Moviy blue (logo)
+          dark: '#1d6fe0',
+          deep: '#0b3d91',
         },
       },
     },

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
+import { fmtDateTime } from '@/lib/date';
 import { OrderStatus } from '@/stores/order';
 
 interface OrderDetail {
@@ -23,6 +24,8 @@ interface OrderDetail {
   distanceKm: string | null;
   price: string | null;
   commission: string;
+  discount?: string | null;
+  bonusUsed?: string | null;
   createdAt: string;
   acceptedAt: string | null;
   completedAt: string | null;
@@ -214,6 +217,20 @@ function Inner() {
               label="Narx"
               value={`${fmt(order.price ?? 0)} so‘m`}
             />
+            {Number(order.discount ?? 0) > 0 && (
+              <Row
+                icon={<Receipt size={14} />}
+                label="Promo chegirma (balansga qaytarildi)"
+                value={`-${fmt(order.discount ?? 0)} so‘m`}
+              />
+            )}
+            {Number(order.bonusUsed ?? 0) > 0 && (
+              <Row
+                icon={<Receipt size={14} />}
+                label="Mijoz bonusidan (balansga tushdi)"
+                value={`+${fmt(order.bonusUsed ?? 0)} so‘m`}
+              />
+            )}
             <Row
               icon={<Receipt size={14} />}
               label="Komissiya"
@@ -296,13 +313,4 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 
 function fmt(v: string | number) {
   return Number(v).toLocaleString('uz');
-}
-function fmtDateTime(s: string) {
-  if (!s) return '—';
-  const d = new Date(s);
-  return (
-    d.toLocaleDateString('uz', { day: '2-digit', month: 'short' }) +
-    ' · ' +
-    d.toLocaleTimeString('uz', { hour: '2-digit', minute: '2-digit' })
-  );
 }

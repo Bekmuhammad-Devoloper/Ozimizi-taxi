@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Client } from './client.entity';
@@ -15,7 +15,8 @@ export class ClientService {
     return this.clients.findOne({ where: { telegramId: String(telegramId) } });
   }
 
-  findById(id: string) {
+  findById(id: string | null) {
+    if (!id) return Promise.resolve(null);
     return this.clients.findOne({ where: { id } });
   }
 
@@ -74,6 +75,12 @@ export class ClientService {
     return 'R' + Date.now().toString(36).toUpperCase();
   }
 
+  /** Telegram chat ids of every client — for admin broadcasts. */
+  async allTelegramIds(): Promise<string[]> {
+    const rows = await this.clients.find({ select: { telegramId: true } });
+    return rows.map((r) => r.telegramId);
+  }
+
   async listForAdmin() {
     const rows = await this.clients
       .createQueryBuilder('c')
@@ -91,11 +98,83 @@ export class ClientService {
     return rows;
   }
 
+  async setBlocked(id: string, blocked: boolean, reason?: string | null) {
+    const c = await this.clients.findOne({ where: { id } });
+    if (!c) throw new NotFoundException('Klient topilmadi');
+    c.isBlocked = blocked;
+    c.blockedReason = blocked ? (reason?.trim() || null) : null;
+    return this.clients.save(c);
+  }
+
   async ordersFor(clientId: string) {
     return this.orders.find({
       where: { clientId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  /** Everything the admin may want to know about one client. */
+  async detailForAdmin(id: string) {
+    const client = await this.clients.findOne({
+      where: { id },
+      relations: { referredBy: true },
+    });
+    if (!client) throw new NotFoundException('Klient topilmadi');
+    const orders = await this.orders.find({
+      where: { clientId: id },
+      relations: { driver: true },
+      order: { createdAt: 'DESC' },
+      take: 500,
+    });
+    const invited = await this.clients.find({
+      where: { referredById: id },
+      order: { createdAt: 'DESC' },
+      select: { id: true, firstName: true, phonePrimary: true, createdAt: true },
+    });
+    let completed = 0;
+    let cancelled = 0;
+    let spent = 0;
+    let bonusUsed = 0;
+    for (const o of orders) {
+      if (o.status === OrderStatus.COMPLETED) {
+        completed++;
+        spent += Number(o.price ?? 0);
+        bonusUsed += Number(o.bonusUsed ?? 0);
+      } else if (o.status === OrderStatus.CANCELLED) {
+        cancelled++;
+      }
+    }
+    return {
+      client: {
+        ...client,
+        referredBy: client.referredBy
+          ? { id: client.referredBy.id, firstName: client.referredBy.firstName, phonePrimary: client.referredBy.phonePrimary }
+          : null,
+      },
+      stats: { total: orders.length, completed, cancelled, spent, bonusUsed },
+      invited,
+      orders: orders.map((o) => ({
+        id: o.id,
+        createdAt: o.createdAt,
+        completedAt: (o as any).completedAt ?? null,
+        status: o.status,
+        price: o.price,
+        bonusUsed: o.bonusUsed,
+        distanceKm: o.distanceKm,
+        waitingSeconds: (o as any).waitingSeconds ?? 0,
+        cancelPenalty: (o as any).cancelPenalty ?? null,
+        pickupLat: o.pickupLat,
+        pickupLng: o.pickupLng,
+        pickupAddress: o.pickupAddress,
+        destinationLat: (o as any).destinationLat ?? null,
+        destinationLng: (o as any).destinationLng ?? null,
+        destinationAddress: (o as any).destinationAddress ?? null,
+        receiptNo: (o as any).receiptNo ?? null,
+        driver: o.driver
+          ? { id: o.driver.id, fullName: o.driver.fullName, phone: o.driver.phone, carModel: o.driver.carModel, carPlate: o.driver.carPlate }
+          : null,
+      })),
+    };
   }
 
   async setAvatar(clientId: string, url: string | null) {

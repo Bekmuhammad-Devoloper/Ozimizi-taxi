@@ -18,12 +18,15 @@ export default function PendingApprovalPage() {
 
   // Kick anyone without a token back to login; bounce approved drivers
   // straight to the dashboard so they don't get stuck here.
+  // Read persisted state directly — the hook value is the server snapshot
+  // (no token) during the hydration render.
   useEffect(() => {
-    if (!token) {
+    const state = useAuthStore.getState();
+    if (!state.token) {
       router.replace('/login');
       return;
     }
-    if (driver?.isApproved) {
+    if (state.driver?.isApproved) {
       router.replace('/dashboard');
     }
   }, [token, driver?.isApproved, router]);

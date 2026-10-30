@@ -11,6 +11,11 @@ import { useAuthStore } from '@/stores/auth';
  *
  * Reactive: subscribes to token + isApproved so logout/approval flips
  * cause an immediate redirect without a manual refresh.
+ *
+ * The decision reads `useAuthStore.getState()` rather than the hook values:
+ * during the hydration render zustand's hook returns the *server* snapshot
+ * (token = null), which used to bounce logged-in drivers to /login on every
+ * full page load.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -20,17 +25,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!token) {
+    const state = useAuthStore.getState();
+    if (!state.token) {
       router.replace('/login');
       return;
     }
+    const approved = state.driver?.isApproved;
     // Self-registered drivers land here unapproved; admin-created ones are
     // pre-approved and skip the wait screen.
-    if (isApproved === false && pathname !== '/pending') {
+    if (approved === false && pathname !== '/pending') {
       router.replace('/pending');
       return;
     }
-    if (isApproved && pathname === '/pending') {
+    if (approved && pathname === '/pending') {
       router.replace('/dashboard');
       return;
     }

@@ -8,6 +8,7 @@ import { OrderModule } from '../order/order.module';
 import { TariffModule } from '../tariff/tariff.module';
 import { BalanceModule } from '../balance/balance.module';
 import { PaymentModule } from '../payment/payment.module';
+import { DriverApplicationModule } from '../driver-application/driver-application.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PaymentModule } from '../payment/payment.module';
     TariffModule,
     BalanceModule,
     PaymentModule,
+    DriverApplicationModule,
   ],
   controllers: [AdminController],
 })

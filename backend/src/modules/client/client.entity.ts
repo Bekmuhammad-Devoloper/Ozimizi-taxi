@@ -35,6 +35,19 @@ export class Client {
   balance: string;
 
   // Short shareable code (e.g. "AB12CD34") used as Telegram /start param.
+  // Admin block: cannot order; penalties for late cancellations.
+  @Column({ name: 'is_blocked', default: false })
+  isBlocked: boolean;
+
+  @Column({ name: 'blocked_reason', type: 'text', nullable: true })
+  blockedReason: string | null;
+
+  @Column({ name: 'cancel_count', type: 'int', default: 0 })
+  cancelCount: number;
+
+  @Column({ name: 'penalty_total', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  penaltyTotal: string;
+
   @Column({ name: 'ref_code', type: 'varchar', length: 16, nullable: true })
   refCode: string | null;
 

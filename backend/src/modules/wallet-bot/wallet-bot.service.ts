@@ -17,6 +17,7 @@ import {
   PaymentEventPayload,
 } from '../payment/payment.events';
 import { WalletBotLinkService } from './wallet-bot-link.service';
+import { telegramAgent } from '../../common/utils/telegram-agent';
 
 /**
  * Wallet bot is the coordinator-only Telegram entry point. The full
@@ -53,7 +54,7 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    this.bot = new Telegraf(token);
+    this.bot = new Telegraf(token, { telegram: { agent: telegramAgent } });
     this.registerHandlers(this.bot);
     this.subscribeToPaymentEvents();
     this.bot.launch({ dropPendingUpdates: true }).catch((e: any) => {
@@ -63,6 +64,7 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
       );
     });
     this.logger.log('Wallet bot launching (long-poll)…');
+    void this.setupMenuButton();
   }
 
   async onModuleDestroy() {
@@ -76,7 +78,12 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     bot.start(async (ctx) => this.handleStart(ctx));
     bot.command('menu', async (ctx) => this.showMenu(ctx));
     bot.command('chiqish', async (ctx) => this.handleLogout(ctx));
+    // Legacy reply-keyboard label, kept for chats that still show it.
     bot.hears('🚪 Chiqish', async (ctx) => this.handleLogout(ctx));
+    bot.action('wb:logout', async (ctx) => {
+      await ctx.answerCbQuery().catch(() => undefined);
+      await this.handleLogout(ctx);
+    });
 
     // Inline approve/reject callbacks remain wired up so the in-chat
     // notifications sent by notifyCoordsOfNew stay actionable even
@@ -111,30 +118,36 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
       await this.linkCoordinator(adminId, chatId);
-      await ctx.reply(
-        `✅ Salom, <b>${admin.username}</b>!\n` +
-          `Koordinator hisobingiz ulandi.\n\n` +
-          `Quyidagi tugma orqali koordinator panelini oching.`,
-        { parse_mode: 'HTML', ...this.mainKeyboard() },
+      await this.replyWithPanel(
+        ctx,
+        `✅ Salom, <b>${admin.username}</b>!\nKoordinator hisobingiz ulandi.`,
       );
       return;
     }
 
     const linked = await this.findLinkedAdmin(chatId);
     if (linked) {
-      await ctx.reply(
-        `Salom, ${linked.username}! 👋\n` +
-          `Koordinator panelini ochish uchun pastdagi tugmadan foydalaning.`,
-        this.mainKeyboard(),
-      );
+      await this.replyWithPanel(ctx, `Salom, <b>${linked.username}</b>! 👋`);
       return;
     }
     // Not linked yet — still surface the Mini App button. The Mini App
     // handles the username/password login itself and binds the chat on
     // success.
-    await ctx.reply(
+    await this.replyWithPanel(
+      ctx,
       'Salom! 👋\nBu bot koordinatorlar uchun.\n\n' +
-        'Quyidagi tugma orqali panelni oching va akkountingizga kiring — chat avtomatik ulanadi.',
+        'Panelni oching va akkountingizga kiring — chat avtomatik ulanadi.',
+    );
+  }
+
+  /**
+   * Greeting + panel button. The greeting also removes the old reply
+   * keyboard, whose web_app button opened the panel without initData.
+   */
+  private async replyWithPanel(ctx: Context, html: string) {
+    await ctx.reply(html, { parse_mode: 'HTML', ...Markup.removeKeyboard() });
+    await ctx.reply(
+      '👇 Koordinator panelini shu tugma yoki pastdagi «Panel» tugmasi orqali oching:',
       this.mainKeyboard(),
     );
   }
@@ -415,14 +428,38 @@ export class WalletBotService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private mainKeyboard() {
-    const webAppUrl =
+  private webAppUrl() {
+    return (
       this.config.get<string>('COORDINATOR_WEBAPP_URL') ??
-      'https://ozimizi-taxi.yuksalish.dev/admin/tg';
-    return Markup.keyboard([
-      [Markup.button.webApp('🌐 Koordinator paneli', webAppUrl)],
-      ['🚪 Chiqish'],
-    ]).resize();
+      'https://moviytaxi.uz/admin/tg'
+    );
+  }
+
+  /**
+   * Inline buttons, not a reply keyboard: Telegram leaves
+   * `WebApp.initData` empty for Mini Apps opened from a reply-keyboard
+   * button, so the panel could never identify the user.
+   */
+  private mainKeyboard() {
+    return Markup.inlineKeyboard([
+      [Markup.button.webApp('🌐 Koordinator paneli', this.webAppUrl())],
+      [Markup.button.callback('🚪 Chiqish', 'wb:logout')],
+    ]);
+  }
+
+  /** Bottom-left "menu" button — also passes initData to the Mini App. */
+  private async setupMenuButton() {
+    try {
+      await this.bot!.telegram.setChatMenuButton({
+        menuButton: {
+          type: 'web_app',
+          text: 'Panel',
+          web_app: { url: this.webAppUrl() },
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`setChatMenuButton failed: ${e?.message ?? e}`);
+    }
   }
 
   private fmt(v: number | string): string {

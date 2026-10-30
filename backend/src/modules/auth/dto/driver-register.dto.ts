@@ -1,4 +1,4 @@
-import { IsString, Matches, MinLength } from 'class-validator';
+import { Equals, IsBoolean, IsString, Matches, MinLength } from 'class-validator';
 
 export class DriverRegisterDto {
   @IsString()
@@ -12,4 +12,9 @@ export class DriverRegisterDto {
   @IsString()
   @MinLength(6, { message: 'Parol kamida 6 belgi bo‘lishi kerak' })
   password: string;
+
+  // The register form can't be submitted without ticking the agreement.
+  @IsBoolean()
+  @Equals(true, { message: 'Shartnomaga rozilik bildiring' })
+  contractAccepted: boolean;
 }

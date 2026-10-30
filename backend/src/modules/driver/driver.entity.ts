@@ -45,6 +45,29 @@ export class Driver {
   @Column({ name: 'is_approved', default: false })
   isApproved: boolean;
 
+  // Branded (company-livery) cars receive new orders a few seconds before
+  // everyone else — see `branded_priority_seconds` in site settings.
+  @Column({ name: 'is_branded', default: false })
+  isBranded: boolean;
+
+  /** 'taxi' (car: rides + deliveries) or 'courier' (deliveries only). */
+  @Column({ type: 'varchar', length: 16, default: 'taxi' })
+  kind: 'taxi' | 'courier';
+
+  /** A taxi driver may opt out of food deliveries. */
+  @Column({ name: 'accept_delivery', default: true })
+  acceptDelivery: boolean;
+
+  /** App version the driver last used ('1.0.6', 'web', …) and when. */
+  @Column({ name: 'app_version', type: 'varchar', length: 32, nullable: true })
+  appVersion: string | null;
+
+  @Column({ name: 'app_platform', type: 'varchar', length: 16, nullable: true })
+  appPlatform: string | null;
+
+  @Column({ name: 'app_seen_at', type: 'timestamptz', nullable: true })
+  appSeenAt: Date | null;
+
   @Column({
     name: 'current_lat',
     type: 'double precision',
@@ -88,6 +111,30 @@ export class Driver {
     nullable: true,
   })
   walletTelegramId: string | null;
+
+  // Driver accepted the agreement (register form / first-login gate).
+  // Documents (admin-managed; photos from the bot questionnaire are copied in).
+  @Column({ name: 'license_photo_url', type: 'varchar', length: 500, nullable: true })
+  licensePhotoUrl: string | null;
+
+  @Column({ name: 'tech_passport_photo_url', type: 'varchar', length: 500, nullable: true })
+  techPassportPhotoUrl: string | null;
+
+  @Column({ name: 'license_number', type: 'varchar', length: 64, nullable: true })
+  licenseNumber: string | null;
+
+  @Column({ name: 'license_expires_at', type: 'date', nullable: true })
+  licenseExpiresAt: string | null;
+
+  @Column({ name: 'password_changed_at', type: 'timestamptz', nullable: true })
+  passwordChangedAt: Date | null;
+
+  @Column({ name: 'contract_accepted_at', type: 'timestamptz', nullable: true })
+  contractAcceptedAt: Date | null;
+
+  // When the admin approved them (null = still pending).
+  @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
+  approvedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

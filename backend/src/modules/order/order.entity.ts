@@ -26,8 +26,13 @@ export class Order {
   id: string;
 
   @Index()
-  @Column({ name: 'client_id' })
-  clientId: string;
+  /** Null for street pickups started from the driver's taximeter. */
+  @Column({ name: 'client_id', type: 'uuid', nullable: true })
+  clientId: string | null;
+
+  /** 'bot' | 'app' | 'street' (taximeter — client not in the system). */
+  @Column({ type: 'varchar', length: 10, default: 'bot' })
+  source: string;
 
   @ManyToOne(() => Client, (client) => client.orders, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'client_id' })
@@ -81,6 +86,21 @@ export class Order {
   })
   commission: string;
 
+  // Promo-code discount taken off `price`. The client pays price − discount in
+  // cash; the driver is compensated for the discount from the treasury.
+  @Column({ type: 'numeric', precision: 14, scale: 2, default: 0 })
+  discount: string;
+
+  // Part of the fare the client paid from their bonus balance (driver
+  // confirmed). Moves client balance → driver balance; less cash changes hands.
+  @Column({ name: 'bonus_used', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  bonusUsed: string;
+
+  // Distance summed server-side from the driver's location pings while the
+  // ride is IN_PROGRESS; used as a floor for the phone-reported distance.
+  @Column({ name: 'server_km', type: 'numeric', precision: 10, scale: 3, default: 0 })
+  serverKm: string;
+
   @Index()
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
@@ -96,4 +116,42 @@ export class Order {
 
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
   cancelledAt: Date | null;
+
+  // Driver reached the pickup / ride started — the gap is the waiting time.
+  @Column({ name: 'arrived_at', type: 'timestamptz', nullable: true })
+  arrivedAt: Date | null;
+
+  @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
+  startedAt: Date | null;
+
+  @Column({ name: 'waiting_minutes', type: 'int', default: 0 })
+  waitingMinutes: number;
+
+  // Charged for waiting beyond the free minutes; added to `price`.
+  @Column({ name: 'waiting_fee', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  waitingFee: string;
+
+  // Total waiting (pickup wait + mid-ride pauses), settled at completion.
+  @Column({ name: 'waiting_seconds', type: 'int', default: 0 })
+  waitingSeconds: number;
+
+  // Set while the driver has a mid-ride pause running.
+  @Column({ name: 'wait_started_at', type: 'timestamptz', nullable: true })
+  waitStartedAt: Date | null;
+
+  // Last moment waiting was accounted (pickup wait or mid-ride pause). GPS
+  // pings add the elapsed time only while the car stands still.
+  @Column({ name: 'wait_tick_at', type: 'timestamptz', nullable: true })
+  waitTickAt: Date | null;
+
+  // Taken from the client's bonus when they cancelled after the driver arrived.
+  @Column({ name: 'cancel_penalty', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  cancelPenalty: string;
+
+  @Column({ name: 'destination_address', type: 'text', nullable: true })
+  destinationAddress: string | null;
+
+  // Sequential receipt number assigned at completion (orders_receipt_no_seq).
+  @Column({ name: 'receipt_no', type: 'bigint', nullable: true })
+  receiptNo: string | null;
 }

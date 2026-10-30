@@ -7,22 +7,49 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TelegrafModule } from 'nestjs-telegraf';
+import { telegramAgent } from './common/utils/telegram-agent';
 import { LoggerModule } from 'nestjs-pino';
 
 import { Client } from './modules/client/client.entity';
 import { Driver } from './modules/driver/driver.entity';
 import { Order } from './modules/order/order.entity';
 import { BalanceTransaction } from './modules/balance/balance-transaction.entity';
+import { LedgerEvent } from './modules/balance/ledger-event.entity';
 import { Tariff } from './modules/tariff/tariff.entity';
 import { Admin } from './modules/admin/admin.entity';
 import { PasswordResetToken } from './modules/auth/password-reset-token.entity';
 import { SiteSetting } from './modules/settings/site-setting.entity';
 import { PaymentRequest } from './modules/payment/payment-request.entity';
 import { Feedback } from './modules/feedback/feedback.entity';
+import {
+  PromoCode,
+  PromoRedemption,
+} from './modules/promo/promo-code.entity';
+import {
+  ReferralLink,
+  ReferralSignup,
+} from './modules/referral/referral.entity';
+import {
+  DriverApplication,
+  DriverApplicationMessage,
+} from './modules/driver-application/driver-application.entity';
+import { PromoModule } from './modules/promo/promo.module';
+import { ReferralModule } from './modules/referral/referral.module';
+import { DriverApplicationModule } from './modules/driver-application/driver-application.module';
+import { OrderMessage } from './modules/chat/order-message.entity';
+import { OrderEvent } from './modules/order/order-event.entity';
+import { ChatModule } from './modules/chat/chat.module';
+import { Announcement } from './modules/announcement/announcement.entity';
+import { AnnouncementModule } from './modules/announcement/announcement.module';
+import { ReceiptModule } from './modules/receipt/receipt.module';
+import { ClientApiModule } from './modules/client-api/client-api.module';
+import { BonusPayment } from './modules/bonus/bonus-payment.entity';
+import { BonusModule } from './modules/bonus/bonus.module';
 import { MailerModule } from './modules/mailer/mailer.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { FoodModule } from './modules/food/food.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientModule } from './modules/client/client.module';
@@ -53,6 +80,7 @@ const botImports: DynamicModule['imports'] = isRealTelegramToken(
         inject: [ConfigService],
         useFactory: (config: ConfigService) => ({
           token: config.get<string>('BOT_TOKEN') ?? '',
+          options: { telegram: { agent: telegramAgent } },
         }),
       }),
       BotModule,
@@ -93,12 +121,23 @@ const feedbackBotImports: DynamicModule['imports'] = isRealTelegramToken(
           Driver,
           Order,
           BalanceTransaction,
+          LedgerEvent,
           Tariff,
           Admin,
           PasswordResetToken,
           SiteSetting,
           PaymentRequest,
           Feedback,
+          PromoCode,
+          PromoRedemption,
+          ReferralLink,
+          ReferralSignup,
+          DriverApplication,
+          DriverApplicationMessage,
+          BonusPayment,
+          OrderMessage,
+          OrderEvent,
+          Announcement,
         ],
         autoLoadEntities: true,
         synchronize: false,
@@ -108,6 +147,7 @@ const feedbackBotImports: DynamicModule['imports'] = isRealTelegramToken(
     SettingsModule,
     PaymentModule,
     FeedbackModule,
+    FoodModule,
     WalletBotLinkModule,
     RealtimeModule,
     AuthModule,
@@ -117,6 +157,14 @@ const feedbackBotImports: DynamicModule['imports'] = isRealTelegramToken(
     OrderModule,
     DriverModule,
     AdminModule,
+    PromoModule,
+    ReferralModule,
+    DriverApplicationModule,
+    BonusModule,
+    ChatModule,
+    AnnouncementModule,
+    ReceiptModule,
+    ClientApiModule,
     GatewaysModule,
     ...botImports,
     ...walletBotImports,

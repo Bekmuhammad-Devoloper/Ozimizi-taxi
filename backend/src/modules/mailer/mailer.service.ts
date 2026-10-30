@@ -14,7 +14,7 @@ export interface SendArgs {
 export class MailerService implements OnModuleInit {
   private readonly logger = new Logger(MailerService.name);
   private transporter: Transporter | null = null;
-  private from = 'Tezkor Taxi <no-reply@tezkor.local>';
+  private from = 'Moviy Taxi <no-reply@moviytaxi.local>';
 
   constructor(private readonly config: ConfigService) {}
 

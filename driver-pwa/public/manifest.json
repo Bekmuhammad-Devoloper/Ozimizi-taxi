@@ -1,7 +1,7 @@
 {
-  "name": "OZIMIZNI TAXI — Haydovchi",
-  "short_name": "Ozimizni",
-  "description": "OZIMIZNI TAXI haydovchi ilovasi",
+  "name": "Moviy Taxi — Haydovchi",
+  "short_name": "Moviy Taxi",
+  "description": "Moviy Taxi haydovchi ilovasi",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

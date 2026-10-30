@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -33,4 +33,9 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(500)
   carPhotoUrl?: string;
+
+  /** Taxi drivers: also receive food deliveries (couriers always do). */
+  @IsOptional()
+  @IsBoolean()
+  acceptDelivery?: boolean;
 }

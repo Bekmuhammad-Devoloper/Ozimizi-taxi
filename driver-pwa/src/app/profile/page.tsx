@@ -14,9 +14,13 @@ import {
   ChevronRight,
   Info,
   Save,
+  Bike,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
+import { IOSSwitch } from '@/components/IOSSwitch';
 import { useAuthStore } from '@/stores/auth';
+import { useDeliveryStore } from '@/stores/delivery';
 import { disconnectSocket } from '@/lib/socket';
 import { api } from '@/lib/api';
 import { assetUrl } from '@/lib/asset';
@@ -49,6 +53,10 @@ function Inner() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [txs, setTxs] = useState<BalanceTx[]>([]);
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryErr, setDeliveryErr] = useState<string | null>(null);
+  // Couriers (foot / bike / moto) need only a photo — no car fields.
+  const isCourier = driver?.kind === 'courier';
   const avatarInput = useRef<HTMLInputElement>(null);
   const carInput = useRef<HTMLInputElement>(null);
 
@@ -117,9 +125,11 @@ function Inner() {
     setErr(null);
     setSaveMsg(null);
     try {
-      if (carModel.trim().length < 2) throw new Error('Mashina modeli majburiy');
-      if (carColor.trim().length < 2) throw new Error('Rang majburiy');
-      if (carPlate.trim().length < 3) throw new Error('Davlat raqami majburiy');
+      if (!isCourier) {
+        if (carModel.trim().length < 2) throw new Error('Mashina modeli majburiy');
+        if (carColor.trim().length < 2) throw new Error('Rang majburiy');
+        if (carPlate.trim().length < 3) throw new Error('Davlat raqami majburiy');
+      }
       const { data } = await api.patch('/driver/profile', {
         carModel: carModel.trim(),
         carColor: carColor.trim(),
@@ -139,8 +149,25 @@ function Inner() {
     }
   };
 
+  // Taxi drivers: also take food deliveries.
+  const toggleAcceptDelivery = async () => {
+    if (deliveryBusy) return;
+    const next = !driver?.acceptDelivery;
+    setDeliveryBusy(true);
+    setDeliveryErr(null);
+    try {
+      const { data } = await api.patch('/driver/profile', { acceptDelivery: next });
+      setDriver({ acceptDelivery: data?.acceptDelivery ?? next });
+    } catch (e: any) {
+      setDeliveryErr(e?.response?.data?.message ?? 'Saqlab bo‘lmadi');
+    } finally {
+      setDeliveryBusy(false);
+    }
+  };
+
   const onLogout = () => {
     disconnectSocket();
+    useDeliveryStore.getState().setActive(null);
     logout();
     router.replace('/login');
   };
@@ -162,7 +189,7 @@ function Inner() {
           className="absolute inset-0 opacity-30 pointer-events-none"
           style={{
             background:
-              'radial-gradient(circle at 50% 0%, rgba(250,204,21,0.45), transparent 60%)',
+              'radial-gradient(circle at 50% 0%, rgba(59,155,255,0.45), transparent 60%)',
           }}
         />
         <button
@@ -214,6 +241,12 @@ function Inner() {
         </p>
         <ul className="bg-white border border-line rounded-2xl overflow-hidden divide-y divide-line">
           <InfoRow
+            icon={isCourier ? <Bike size={16} /> : <Car size={16} />}
+            label="Turi"
+          >
+            {isCourier ? 'Kuryer' : 'Taksi'}
+          </InfoRow>
+          <InfoRow
             icon={<TrendingUp size={16} />}
             label="Bugungi daromad"
             valueClass="text-gold-deep font-bold"
@@ -235,10 +268,34 @@ function Inner() {
               <ChevronRight size={14} className="text-neutral-400" />
             </Link>
           </li>
+          {!isCourier && (
+            <li className="flex items-center gap-3 px-4 py-3">
+              <span className="text-neutral-400">
+                <UtensilsCrossed size={16} />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium">
+                  Yetkazish buyurtmalarini olish
+                </span>
+                <span className="block text-[11px] text-neutral-500 leading-snug">
+                  Oshxonadan mijozga ovqat yetkazib, haq olasiz
+                </span>
+              </span>
+              <IOSSwitch
+                size="sm"
+                checked={!!driver?.acceptDelivery}
+                onChange={toggleAcceptDelivery}
+                disabled={deliveryBusy}
+              />
+            </li>
+          )}
         </ul>
+        {deliveryErr && <p className="mt-2 ml-1 text-sm text-red-600">{deliveryErr}</p>}
+        {isCourier && err && <p className="mt-2 ml-1 text-sm text-red-600">{err}</p>}
       </section>
 
-      {/* CAR */}
+      {/* CAR (taxi drivers only) */}
+      {!isCourier && (
       <section className="px-6 mt-6">
         <p className="text-xs uppercase tracking-wider text-neutral-500 font-semibold mb-2 ml-1">
           Mashina ma'lumotlari
@@ -317,6 +374,7 @@ function Inner() {
           </button>
         </div>
       </section>
+      )}
 
       {/* SECURITY */}
       <section className="px-6 mt-6">
@@ -338,8 +396,9 @@ function Inner() {
         <div className="rounded-2xl bg-gold/10 border border-gold/30 p-4 flex gap-3">
           <Info size={18} className="text-gold-deep shrink-0 mt-0.5" />
           <p className="text-xs text-gold-deep leading-relaxed">
-            Mashina ma'lumotlari va rasm to‘liq bo‘lgandagina ONLINE rejimga
-            o‘tib, buyurtma qabul qila olasiz.
+            {isCourier
+              ? 'Profil rasmi yuklangandagina ONLINE rejimga o‘tib, yetkazish buyurtmalarini qabul qila olasiz.'
+              : 'Mashina ma\'lumotlari va rasm to‘liq bo‘lgandagina ONLINE rejimga o‘tib, buyurtma qabul qila olasiz.'}
           </p>
         </div>
       </section>

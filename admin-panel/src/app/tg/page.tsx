@@ -1,9 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import Cookies from 'js-cookie';
 import { LogIn } from 'lucide-react';
 import { api } from '@/lib/api';
+
+// Hard navigations bypass Next's router, so the /admin basePath must be
+// added by hand — otherwise they land on the driver app at the domain root.
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 type Stage = 'booting' | 'authing' | 'needsLogin' | 'linking' | 'noWebApp';
 
@@ -54,7 +59,7 @@ export default function TelegramEntryPage() {
             .then(({ data }) => {
               Cookies.set('admin_token', data.access_token, { expires: 7 });
               window.location.replace(
-                data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
+                BASE + (data.admin?.role === 'admin' ? '/dashboard' : '/coordinator'),
               );
             })
             .catch(() => {
@@ -125,7 +130,7 @@ export default function TelegramEntryPage() {
       });
       Cookies.set('admin_token', data.access_token, { expires: 7 });
       window.location.replace(
-        data.admin?.role === 'admin' ? '/dashboard' : '/coordinator',
+        BASE + (data.admin?.role === 'admin' ? '/dashboard' : '/coordinator'),
       );
     } catch (e: any) {
       setErr(
@@ -139,10 +144,12 @@ export default function TelegramEntryPage() {
     <main className="min-h-[100dvh] flex items-center justify-center px-6 bg-white">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto rounded-full bg-gold/15 ring-2 ring-gold/40 flex items-center justify-center text-2xl mb-3">
-            🤖
+          <div className="w-20 h-20 mx-auto rounded-2xl overflow-hidden ring-2 ring-gold/60 shadow-[0_14px_40px_-14px_rgba(59,155,255,0.8)] mb-3">
+            <Image src={`${BASE}/logo.jpg`} alt="MOVIY TAXI" width={80} height={80} className="w-full h-full object-cover" priority />
           </div>
-          <h1 className="text-lg font-bold">Wallet bot</h1>
+          <h1 className="text-lg font-extrabold tracking-wide">
+            MOVIY <span className="text-gold-deep">TAXI</span>
+          </h1>
           <p className="text-xs text-neutral-500 mt-1">
             Koordinator paneliga kirish
           </p>
@@ -162,7 +169,7 @@ export default function TelegramEntryPage() {
 
         {stage === 'noWebApp' && (
           <p className="text-center text-sm text-red-600">
-            Telegram WebApp aniqlanmadi. Iltimos, @OzimizniWaltbot dagi
+            Telegram WebApp aniqlanmadi. Iltimos, wallet botdagi
             <b> 🌐 Koordinator paneli</b> tugmasi orqali kiring.
           </p>
         )}

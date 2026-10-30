@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   Matches,
@@ -22,4 +23,9 @@ export class CreateDriverDto {
   @IsString()
   @MinLength(6, { message: 'Parol kamida 6 belgi' })
   password: string;
+
+  /** 'taxi' (default) or 'courier' (food deliveries only, no car needed). */
+  @IsOptional()
+  @IsIn(['taxi', 'courier'])
+  kind?: 'taxi' | 'courier';
 }

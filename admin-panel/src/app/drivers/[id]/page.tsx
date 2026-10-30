@@ -14,10 +14,17 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquare,
+  Crown,
+  Bike,
+  CarFront,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { DriverAvatar } from '@/components/DriverAvatar';
+import { DriverAccessCard, DriverDocumentsCard } from '@/components/DriverDocsCards';
 import { api } from '@/lib/api';
+import { orderStatusLabel } from '@/lib/status';
+import { fmtDateTime } from '@/lib/format';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -54,6 +61,12 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
   const reject = useMutation({
     mutationFn: async () =>
       (await api.post(`/admin/drivers/${params.id}/reject`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['driver', params.id] }),
+  });
+  const branded = useMutation({
+    mutationFn: async (value: boolean) =>
+      (await api.post(`/admin/drivers/${params.id}/branded`, { branded: value }))
+        .data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['driver', params.id] }),
   });
   const block = useMutation({
@@ -134,6 +147,16 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
                   Tasdiqlangan
                 </Badge>
               )}
+              {d.isBranded && (
+                <Badge tone="blue" icon={<Crown size={11} />}>
+                  Brendli mashina
+                </Badge>
+              )}
+              {d.kind === 'courier' && (
+                <Badge tone="violet" icon={<Bike size={11} />}>
+                  Kuryer
+                </Badge>
+              )}
               {d.walletTelegramId && (
                 <Badge tone="blue" icon={<MessageSquare size={11} />}>
                   Wallet bot ulangan
@@ -161,6 +184,20 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
                 <XCircle size={14} /> Tasdiqni olib tashlash
               </button>
             )}
+            <button
+              onClick={() => branded.mutate(!d.isBranded)}
+              disabled={branded.isPending}
+              title="Brendli mashinalar yangi buyurtmani boshqalardan oldin oladi"
+              className={
+                'h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold border ' +
+                (d.isBranded
+                  ? 'bg-neutral-50 text-neutral-600 border-line'
+                  : 'bg-blue-50 text-blue-700 border-blue-200')
+              }
+            >
+              <Crown size={14} />{' '}
+              {d.isBranded ? 'Brenddan olish' : 'Brendli qilish'}
+            </button>
             {d.isActive ? (
               <button
                 onClick={() => {
@@ -208,6 +245,13 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
         />
       </section>
 
+      {/* DELIVERY: taxi / courier + food deliveries on/off */}
+      <DeliveryKindCard
+        driverId={d.id}
+        kind={d.kind === 'courier' ? 'courier' : 'taxi'}
+        acceptDelivery={d.acceptDelivery !== false}
+      />
+
       {/* PROFILE INFO */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <div className="card p-5">
@@ -229,13 +273,22 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
             <InfoRow
               icon={<CalendarDays size={16} />}
               label="Ro'yxatdan o'tgan"
-              value={new Date(d.createdAt).toLocaleString('uz', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+              value={fmtDateTime(d.createdAt)}
+            />
+            <InfoRow
+              icon={<CalendarDays size={16} />}
+              label="Haydovchi bo'lgan (tasdiqlangan)"
+              value={d.approvedAt ? fmtDateTime(d.approvedAt) : 'Hali tasdiqlanmagan'}
+            />
+            <InfoRow
+              icon={<CalendarDays size={16} />}
+              label="Bajargan safarlar"
+              value={String((data as any)?.ordersCompleted ?? 0)}
+            />
+            <InfoRow
+              icon={<CalendarDays size={16} />}
+              label="Shartnoma"
+              value={d.contractAcceptedAt ? `Qabul qilingan: ${fmtDateTime(d.contractAcceptedAt)}` : 'Hali qabul qilinmagan'}
             />
             <InfoRow
               icon={<MapPin size={16} />}
@@ -301,6 +354,12 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
         </div>
       </section>
 
+      {/* ACCESS + DOCUMENTS */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <DriverAccessCard driverId={d.id} phone={d.phone} passwordChangedAt={d.passwordChangedAt} />
+        <DriverDocumentsCard key={`${d.id}:${d.licensePhotoUrl}:${d.techPassportPhotoUrl}:${d.carPhotoUrl}:${d.avatarUrl}`} driver={d} />
+      </section>
+
       {/* ORDERS + TX */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-5">
@@ -318,12 +377,7 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
                 >
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-500">
-                      {new Date(o.createdAt).toLocaleString('uz', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {fmtDateTime(o.createdAt)}
                     </span>
                     <StatusPill status={o.status} />
                   </div>
@@ -359,15 +413,10 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
                     className="border-b border-line pb-2 last:border-0 flex justify-between text-sm"
                   >
                     <span className="text-xs text-neutral-500">
-                      {new Date(t.createdAt).toLocaleString('uz', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}{' '}
+                      {fmtDateTime(t.createdAt)}{' '}
                       ·{' '}
                       <span className="uppercase tracking-wider font-bold">
-                        {t.type}
+                        {txLabel(t.type)}
                       </span>
                     </span>
                     <span
@@ -390,6 +439,95 @@ export default function DriverDetail({ params }: { params: { id: string } }) {
   );
 }
 
+type WorkMode = 'taxi' | 'courier' | 'both';
+
+const WORK_MODES: {
+  value: WorkMode;
+  label: string;
+  hint: string;
+  body: { kind: 'taxi' | 'courier'; acceptDelivery?: boolean };
+  icon: typeof CarFront;
+}[] = [
+  {
+    value: 'taxi',
+    label: 'Faqat taksi',
+    hint: 'Faqat taksi safarlari — yetkazish buyurtmalari kelmaydi.',
+    body: { kind: 'taxi', acceptDelivery: false },
+    icon: CarFront,
+  },
+  {
+    value: 'courier',
+    label: 'Faqat kuryer',
+    hint: 'Faqat ovqat yetkazish buyurtmalari — taksi safarlari kelmaydi.',
+    body: { kind: 'courier' },
+    icon: Bike,
+  },
+  {
+    value: 'both',
+    label: 'Taksi + yetkazish',
+    hint: 'Taksi safarlari bilan birga ovqat yetkazish buyurtmalarini ham oladi.',
+    body: { kind: 'taxi', acceptDelivery: true },
+    icon: UtensilsCrossed,
+  },
+];
+
+/** Driver work mode: taxi only / courier only / taxi + food deliveries. */
+function DeliveryKindCard({
+  driverId,
+  kind,
+  acceptDelivery,
+}: {
+  driverId: string;
+  kind: 'taxi' | 'courier';
+  acceptDelivery: boolean;
+}) {
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: async (body: { kind: 'taxi' | 'courier'; acceptDelivery?: boolean }) =>
+      (await api.patch(`/admin/drivers/${driverId}/kind`, body)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['driver', driverId] });
+      qc.invalidateQueries({ queryKey: ['drivers'] });
+    },
+    onError: (e: any) => alert(e?.response?.data?.message ?? 'Saqlab bo‘lmadi'),
+  });
+  const current: WorkMode = kind === 'courier' ? 'courier' : acceptDelivery ? 'both' : 'taxi';
+  const active = WORK_MODES.find((m) => m.value === current)!;
+  return (
+    <section className="card p-4 mb-4 flex flex-col lg:flex-row lg:items-center gap-4">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <span className="w-10 h-10 rounded-xl bg-gold/15 text-gold-deep flex items-center justify-center shrink-0">
+          <active.icon size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="font-bold text-sm">Ish turi: {active.label}</p>
+          <p className="text-xs text-neutral-500">{active.hint}</p>
+        </div>
+      </div>
+      <div className="flex rounded-lg border border-line overflow-hidden flex-wrap sm:flex-nowrap">
+        {WORK_MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            disabled={save.isPending}
+            title={m.hint}
+            onClick={() => {
+              if (m.value === current) return;
+              if (confirm(`“${m.label}” rejimiga o‘tkazilsinmi?\n${m.hint}`)) save.mutate(m.body);
+            }}
+            className={
+              'flex-1 h-9 px-3 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 ' +
+              (current === m.value ? 'bg-ink text-gold' : 'bg-white text-neutral-500 hover:bg-neutral-50')
+            }
+          >
+            <m.icon size={14} /> {m.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Badge({
   children,
   tone,
@@ -398,7 +536,7 @@ function Badge({
   pulse,
 }: {
   children: React.ReactNode;
-  tone: 'green' | 'red' | 'orange' | 'gray' | 'emerald' | 'blue';
+  tone: 'green' | 'red' | 'orange' | 'gray' | 'emerald' | 'blue' | 'violet';
   icon?: React.ReactNode;
   dot?: boolean;
   pulse?: boolean;
@@ -409,6 +547,7 @@ function Badge({
     orange: 'bg-orange-50 text-orange-700 border-orange-200',
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    violet: 'bg-violet-50 text-violet-700 border-violet-200',
     gray: 'bg-neutral-100 text-neutral-500 border-neutral-200',
   };
   return (
@@ -507,7 +646,7 @@ function StatusPill({ status }: { status: string }) {
         tone
       }
     >
-      {status}
+      {orderStatusLabel(status)}
     </span>
   );
 }
@@ -523,10 +662,21 @@ function cssColor(name?: string | null): string {
     'ko‘k': '#2563eb',
     kok: '#2563eb',
     yashil: '#16a34a',
-    sariq: '#facc15',
+    sariq: '#3b9bff',
     jigarrang: '#78350f',
     kumush: '#d1d5db',
   };
   const key = name.trim().toLowerCase();
   return map[key] ?? '#e5e5e5';
+}
+
+function txLabel(t: string): string {
+  const m: Record<string, string> = {
+    COMMISSION: 'Komissiya',
+    TOPUP: 'To‘ldirish',
+    WITHDRAW: 'Yechish',
+    ADJUSTMENT: 'Tuzatish',
+    BONUS: 'Mijoz bonusi',
+  };
+  return m[t] ?? t;
 }
