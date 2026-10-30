@@ -14,15 +14,22 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 WITH_APK=${1:-}
 PY=${PYTHON:-python}
+# RESUME=1: a build is already running on Vega — just wait for it and activate.
+RESUME=${RESUME:-}
 
+# Some shells block `sleep`; fall back to ping as a timer.
+pause() { sleep "$1" 2>/dev/null || ping -n "$(( $1 + 1 ))" 127.0.0.1 >/dev/null 2>&1 || ping -c "$(( $1 + 1 ))" 127.0.0.1 >/dev/null 2>&1; }
+
+# Vega resets SSH connections now and then — retry each remote step.
+retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "   retry $n: $*" >&2; pause 5; done; return 1; }
+
+if [ -z "$RESUME" ]; then
 echo "→ Pack"
 cd "$REPO"
 git ls-files -co --exclude-standard -z | tar --null -T - -czf "$HERE/code.tgz"
 MD5=$(md5sum "$HERE/code.tgz" | cut -d' ' -f1)
 echo "   code.tgz $(du -h "$HERE/code.tgz" | cut -f1) md5=$MD5"
 
-# Vega resets SSH connections now and then — retry each remote step.
-retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "   retry $n: $*" >&2; sleep 5; done; return 1; }
 
 echo "→ Upload to Vega"
 retry scp -q -o ConnectTimeout=20 "$HERE/code.tgz" vega:/opt/moviytaxi/code.tgz
@@ -35,10 +42,13 @@ echo "→ Build on Vega (detached; SSH drops are common there)"
 APK_STEP=""
 [ "$WITH_APK" = "apk" ] && APK_STEP="&& bash build-apk.sh && bash build-apk-client.sh && cp -f apk/*.apk apk/*.json build/out/\$(cat build/token)/apk/"
 retry ssh -o ConnectTimeout=20 vega "cd /opt/moviytaxi && chmod +x *.sh && : > build.log && (setsid nohup bash -c 'bash build-on-vega.sh $APK_STEP; echo EXIT=\$?' > build.log 2>&1 < /dev/null &)"
+else
+  echo "→ Resume: waiting for the build already running on Vega"
+fi
 for i in $(seq 1 240); do
   LINE=$(ssh -o ConnectTimeout=20 vega 'grep -E "^EXIT=" /opt/moviytaxi/build.log' 2>/dev/null || true)
   [ -n "$LINE" ] && break
-  sleep 15
+  pause 15
 done
 retry ssh -o ConnectTimeout=20 vega 'grep -E "^(→|BUILD-DONE|APK-DONE|EXIT=)|rror" /opt/moviytaxi/build.log | tail -12'
 URL=$(retry ssh -o ConnectTimeout=20 vega 'grep -oE "url=\S+" /opt/moviytaxi/build.log | tail -1 | cut -d= -f2')
@@ -50,12 +60,12 @@ echo "→ Activate on the VPS: $URL"
 RRUN=$(cygpath -m "$HERE/rrun.py" 2>/dev/null || echo "$HERE/rrun.py")
 # Run detached on the VPS (an SSH drop must not kill a half-done swap), then poll its log.
 MSYS_NO_PATHCONV=1 "$PY" -I "$RRUN" "cd /opt/moviytaxi && : > activate.log && (setsid nohup bash pull-activate.sh '$URL' ${WITH_APK} > activate.log 2>&1 < /dev/null &) && echo started" 120 \
-  || { sleep 10; MSYS_NO_PATHCONV=1 "$PY" -I "$RRUN" "cd /opt/moviytaxi && pgrep -f pull-activat[e] >/dev/null || ( : > activate.log && (setsid nohup bash pull-activate.sh '$URL' ${WITH_APK} > activate.log 2>&1 < /dev/null &) ); echo started" 120; }
+  || { pause 10; MSYS_NO_PATHCONV=1 "$PY" -I "$RRUN" "cd /opt/moviytaxi && pgrep -f pull-activat[e] >/dev/null || ( : > activate.log && (setsid nohup bash pull-activate.sh '$URL' ${WITH_APK} > activate.log 2>&1 < /dev/null &) ); echo started" 120; }
 for i in $(seq 1 120); do
   OUT=$(MSYS_NO_PATHCONV=1 "$PY" -I "$RRUN" "grep -E '^ACTIVATE-DONE' /opt/moviytaxi/activate.log; pgrep -f pull-activat[e] >/dev/null && echo RUNNING || echo STOPPED" 60 2>/dev/null || true)
   echo "$OUT" | grep -q "ACTIVATE-DONE" && break
   echo "$OUT" | grep -q "STOPPED" && { echo "activation stopped without ACTIVATE-DONE"; break; }
-  sleep 15
+  pause 15
 done
 MSYS_NO_PATHCONV=1 "$PY" -I "$RRUN" "grep -vE '^(npm (warn|notice)|query)' /opt/moviytaxi/activate.log | tail -18" 60 || true
 
