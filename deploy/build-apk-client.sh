@@ -15,6 +15,8 @@ VER=$(grep -oP "versionName \"\K[^\"]+" android/app/build.gradle)
 node -e 'const f="capacitor.config.json",c=JSON.parse(require("fs").readFileSync(f));c.appendUserAgent="MoviyClient/"+process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "$VER"
 echo "→ cap sync"; npx cap sync android 2>&1 | tail -2
 cd android && chmod +x gradlew
+# AGP 8.x needs Gradle <= 9.5 — keep the wrapper on the version the driver app uses.
+sed -i -E "s#gradle-[0-9.]+-(bin|all)\.zip#gradle-8.14.3-all.zip#" gradle/wrapper/gradle-wrapper.properties
 echo "→ gradle assembleRelease"; ./gradlew assembleRelease --no-daemon -q 2>&1 | grep -vE "^\s*$|warning:" | tail -15
 mkdir -p /opt/moviytaxi/apk
 cp app/build/outputs/apk/release/app-release.apk /opt/moviytaxi/apk/moviytaxi-client.apk
