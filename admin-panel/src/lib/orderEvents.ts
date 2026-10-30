@@ -59,10 +59,17 @@ export function describeEvent(e: OrderEventRow): { icon: string; title: string; 
     case 'broadcast':
       return {
         icon: '📢',
-        title: `O‘rtaga tushdi — ${d.drivers} ta haydovchiga`,
+        title: `${d.round > 1 ? `${d.round}-marta qayta signal` : 'O‘rtaga tushdi'} — ${d.drivers} ta haydovchiga`,
         detail: `${d.triedBefore ?? 0} ta yaqin haydovchi olmadi · hammaga ${d.seconds ?? 15} s signal${
           Array.isArray(d.names) && d.names.length ? ` · ${d.names.slice(0, 6).join(', ')}${d.names.length > 6 ? '…' : ''}` : ''
         }`,
+        tone: 'warn',
+      };
+    case 'released':
+      return {
+        icon: '🔄',
+        title: `Haydovchi qaytardi: ${who}`,
+        detail: 'Buyurtma bekor qilinmadi — qayta o‘rtaga tushdi',
         tone: 'warn',
       };
     case 'no_drivers':

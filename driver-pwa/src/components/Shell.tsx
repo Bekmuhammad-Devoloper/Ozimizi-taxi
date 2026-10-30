@@ -10,6 +10,8 @@ import { useAuthStore } from '@/stores/auth';
 import { useOrderStore } from '@/stores/order';
 import { isDeliveryLive, syncActiveDelivery, useDeliveryStore } from '@/stores/delivery';
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { needsPermissionScreen } from './PermissionGate';
 import {
   driverServiceStart,
   driverServiceStop,
@@ -21,6 +23,8 @@ import {
 // The active food delivery is re-read from the server once per app load
 // (per account), so it is restored after a reinstall / on another phone.
 let deliveryRestoredFor: string | null = null;
+// Missing permissions are checked once per app start for a logged-in driver.
+let permissionsChecked = false;
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const driver = useAuthStore((s) => s.driver);
@@ -31,9 +35,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   // happens to be toggled offline mid-trip).
   // In the Android app: ask for notification permission and create the
   // loud "new order" channel as soon as the driver is in.
+  const router = useRouter();
   useEffect(() => {
-    if (isNativeApp()) void setupNativeNotifications();
-  }, []);
+    if (!isNativeApp()) return;
+    void setupNativeNotifications();
+    if (permissionsChecked) return;
+    permissionsChecked = true;
+    needsPermissionScreen()
+      .then((need) => {
+        if (need) router.push('/permissions');
+      })
+      .catch(() => undefined);
+  }, [router]);
 
   // APK: the background service follows the online switch — it keeps
   // receiving orders (and rings) when the app is closed, and stops as soon

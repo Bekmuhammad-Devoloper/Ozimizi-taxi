@@ -100,21 +100,35 @@ export class OrderService {
       allAt: number | null;
       allDrivers: Set<string>;
       ringAt: Map<string, number>;
+      /** Drivers who declined in the middle or gave the order back — never rung again. */
+      declined: Set<string>;
+      /** How many times the middle has rung (re-rings every RERING_MS). */
+      rounds: number;
     }
   >();
 
-  async broadcastToNearbyDrivers(order: Order): Promise<void> {
-    this.dispatch.set(order.id, {
-      stage: 'personal',
+  // An order nobody took rings everyone again every minute, for up to 30 minutes.
+  private static readonly RERING_MS = 60_000;
+  private static readonly RERING_MAX = 30;
+
+  private newDispatch(stage: 'personal' | 'all', declined: string[] = []) {
+    return {
+      stage,
       offeredTo: null,
       offeredAt: Date.now(),
-      tried: new Set(),
+      tried: new Set<string>(declined),
       timer: null,
       offerSeconds: 15,
       allAt: null,
-      allDrivers: new Set(),
-      ringAt: new Map(),
-    });
+      allDrivers: new Set<string>(),
+      ringAt: new Map<string, number>(),
+      declined: new Set<string>(declined),
+      rounds: 0,
+    };
+  }
+
+  async broadcastToNearbyDrivers(order: Order): Promise<void> {
+    this.dispatch.set(order.id, this.newDispatch('personal'));
     await this.offerNext(order.id).catch((e) =>
       this.logger.warn(`dispatch failed for ${order.id}: ${(e as Error).message}`),
     );
@@ -228,20 +242,34 @@ export class OrderService {
     st.stage = 'all';
     st.offeredTo = null;
     st.allAt = Date.now();
-    const everyone = await this.freeOnlineDrivers();
+    st.ringAt = new Map();
+    st.rounds += 1;
+    const everyone = (await this.freeOnlineDrivers()).filter((d) => !st.declined.has(d.id));
     st.allDrivers = new Set(everyone.map((d) => d.id));
     for (const d of everyone) {
       const km = haversineKm(order.pickupLat, order.pickupLng, d.currentLat!, d.currentLng!);
       this.realtime.emitToDriver(d.id, 'new_order', await this.offerPayload(order, km, 'all', cfg.offerSeconds));
     }
-    await this.logEvent(orderId, everyone.length ? 'broadcast' : 'no_drivers', null, {
-      drivers: everyone.length,
-      names: everyone.slice(0, 30).map((d) => d.fullName),
-      seconds: cfg.offerSeconds,
-      triedBefore: st.tried.size,
-      pickupAddress: order.pickupAddress,
-    });
-    this.logger.log(`order ${orderId.slice(0, 8)} → all ${everyone.length} online drivers`);
+    // Repeat rounds only make a timeline row when someone was rung.
+    if (st.rounds === 1 || everyone.length) {
+      await this.logEvent(orderId, everyone.length ? 'broadcast' : 'no_drivers', null, {
+        drivers: everyone.length,
+        names: everyone.slice(0, 30).map((d) => d.fullName),
+        seconds: cfg.offerSeconds,
+        triedBefore: st.tried.size,
+        round: st.rounds,
+        pickupAddress: order.pickupAddress,
+      });
+    }
+    this.logger.log(`order ${orderId.slice(0, 8)} → all ${everyone.length} online drivers (round ${st.rounds})`);
+    // Still nobody? Ring the middle again in a minute (new drivers included).
+    if (st.rounds < OrderService.RERING_MAX) {
+      st.timer = setTimeout(() => {
+        const cur = this.dispatch.get(orderId);
+        if (!cur || cur !== st) return;
+        void this.offerNext(orderId).catch(() => undefined);
+      }, OrderService.RERING_MS);
+    }
   }
 
   /** Driver pressed "Rad etish" on a personal offer → move on immediately. */
@@ -258,6 +286,7 @@ export class OrderService {
       st.offeredTo = null;
       await this.offerNext(orderId);
     } else if (st?.stage === 'all') {
+      st.declined.add(driverId);
       const d = await this.drivers.findOne({ where: { id: driverId } });
       await this.logEvent(orderId, 'declined', driverId, {
         ...this.driverLabel(d),
@@ -918,7 +947,59 @@ export class OrderService {
         'Bu bosqichda bekor qilib bo‘lmaydi',
       );
     }
-    return this.cancel(orderId, 'driver');
+    // A street ride has no passenger in the system to hand over.
+    if (!order.clientId) return this.cancel(orderId, 'driver');
+    return this.requeue(order, driverId);
+  }
+
+  /**
+   * The driver gave the order back: instead of cancelling it for the client,
+   * it returns to the middle — every other free driver gets the alarm, and it
+   * keeps re-ringing until someone takes it. The driver who gave it back is
+   * not rung for it again.
+   */
+  private async requeue(order: Order, driverId: string): Promise<Order> {
+    const prevStatus = order.status;
+    const result = await this.orders
+      .createQueryBuilder()
+      .update(Order)
+      .set({
+        driverId: null,
+        status: OrderStatus.PENDING,
+        acceptedAt: null,
+        arrivedAt: null,
+        startedAt: null,
+        waitingMinutes: 0,
+        waitingFee: '0',
+        waitingSeconds: 0,
+        waitStartedAt: null,
+        waitTickAt: null,
+        serverKm: '0',
+      } as any)
+      .where('id = :id AND driver_id = :driverId AND status = :status', {
+        id: order.id,
+        driverId,
+        status: prevStatus,
+      })
+      .execute();
+    if (!result.affected) {
+      throw new BadRequestException('Buyurtma holati o‘zgardi — sahifani yangilang');
+    }
+    const saved = await this.orders.findOneOrFail({ where: { id: order.id } });
+    const d = await this.drivers.findOne({ where: { id: driverId } });
+    await this.logEvent(saved.id, 'released', driverId, {
+      ...this.driverLabel(d),
+      atStatus: prevStatus,
+    });
+    this.realtime.emitToDriver(driverId, 'order_cancelled', { orderId: saved.id, by: 'driver' });
+    this.realtime.emitToAdmin('order_requeued', this.toPlain(saved));
+    this.events.emit('order.requeued', { order: saved });
+    this.endDispatch(saved.id);
+    this.dispatch.set(saved.id, this.newDispatch('all', [driverId]));
+    await this.offerNext(saved.id).catch((e) =>
+      this.logger.warn(`requeue dispatch failed for ${saved.id}: ${(e as Error).message}`),
+    );
+    return saved;
   }
 
   /**

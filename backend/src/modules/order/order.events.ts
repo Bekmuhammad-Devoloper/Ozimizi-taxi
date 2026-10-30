@@ -14,7 +14,9 @@ export type OrderEventName =
   | 'order.arrived'
   | 'order.in_progress'
   | 'order.completed'
-  | 'order.cancelled';
+  | 'order.cancelled'
+  /** The driver gave the order back — it is searching for a driver again. */
+  | 'order.requeued';
 
 export interface DriverSummary {
   fullName: string;

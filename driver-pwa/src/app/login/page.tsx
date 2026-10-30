@@ -6,6 +6,7 @@ import { Eye, EyeOff, Phone, Lock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { AuthShell } from '@/components/AuthShell';
+import { PermissionGate, needsPermissionScreen } from '@/components/PermissionGate';
 
 function maskPhone(raw: string) {
   const digits = raw.replace(/\D/g, '').slice(0, 12);
@@ -27,6 +28,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
+  // In the app, permissions come first — before the phone/password form.
+  const [gate, setGate] = useState<'checking' | 'show' | 'done'>('checking');
+  useEffect(() => {
+    if (useAuthStore.getState().token) return;
+    needsPermissionScreen()
+      .then((need) => setGate(need ? 'show' : 'done'))
+      .catch(() => setGate('done'));
+  }, []);
 
   // Already logged in (e.g. the app was reopened) — skip the form.
   useEffect(() => {
@@ -60,6 +69,9 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (gate === 'show') return <PermissionGate onDone={() => setGate('done')} />;
+  if (gate === 'checking') return <main className="min-h-[100dvh] bg-paper" />;
 
   return (
     <AuthShell subtitle="Haydovchi hisobiga kiring">

@@ -1,13 +1,7 @@
 package uz.moviytaxi.driver;
 
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.PowerManager;
-import android.provider.Settings;
 import android.view.WindowManager;
 import android.webkit.WebView;
 
@@ -27,7 +21,8 @@ public class MainActivity extends BridgeActivity {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
         }
-        askToIgnoreBatteryOptimizations();
+        // Battery / location / notification permissions are asked by the
+        // first-start screen of the web app (MoviyDriver.askPermission).
     }
 
     @Override
@@ -61,27 +56,5 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         DriverOnlineService.appInForeground = false;
         super.onDestroy();
-    }
-
-    /**
-     * Doze / app-standby would cut the network of a backgrounded app within
-     * minutes and orders would stop arriving. Ask once (and again every few
-     * days if the driver re-enabled optimization) to exempt the app.
-     */
-    private void askToIgnoreBatteryOptimizations() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
-        try {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
-            SharedPreferences prefs = getSharedPreferences("moviy", MODE_PRIVATE);
-            long last = prefs.getLong("battery_ask_at", 0);
-            if (System.currentTimeMillis() - last < 3L * 24 * 3600 * 1000) return;
-            prefs.edit().putLong("battery_ask_at", System.currentTimeMillis()).apply();
-            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-            i.setData(Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-        } catch (Exception ignored) {
-            // some OEM ROMs don't support the dialog — nothing else to do
-        }
     }
 }

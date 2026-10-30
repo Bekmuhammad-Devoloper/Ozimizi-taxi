@@ -35,6 +35,7 @@ export function useClientSocket() {
         'order.in_progress': '🛣 Safar boshlandi',
         'order.completed': '🏁 Safar yakunlandi',
         'order.cancelled': '❌ Buyurtma bekor qilindi',
+        'order.requeued': '🔄 Haydovchi qaytardi — yangi haydovchi qidirilmoqda',
       };
       const title = titles[event] ?? STATUS_LABEL[order.status];
       const body =

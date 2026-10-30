@@ -544,6 +544,17 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
       });
     });
 
+    this.orderEvents.on('order.requeued', ({ order }) => {
+      this.notifyClient(order.clientId, async (chatId) => {
+        await this.bot.telegram.sendMessage(
+          chatId,
+          '🔄 <b>Haydovchi buyurtmani qaytardi</b>\n' +
+            'Buyurtmangiz bekor qilinmadi — boshqa haydovchi qidirilmoqda. Topilishi bilan xabar beramiz.',
+          { parse_mode: 'HTML' },
+        );
+      });
+    });
+
     this.orderEvents.on('order.cancelled', ({ order }) => {
       this.notifyClient(order.clientId, async (chatId) => {
         const penalty = Number(order.cancelPenalty ?? 0);

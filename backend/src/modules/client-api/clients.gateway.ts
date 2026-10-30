@@ -29,6 +29,7 @@ const EVENTS: OrderEventName[] = [
   'order.in_progress',
   'order.completed',
   'order.cancelled',
+  'order.requeued',
 ];
 
 /**

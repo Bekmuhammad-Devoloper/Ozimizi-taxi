@@ -320,3 +320,97 @@ export function compareVersions(a: string, b: string): number | null {
   }
   return 0;
 }
+
+// ---- first-start permissions (shown before the phone/password form) ---------
+
+export type PermKind = 'location' | 'backgroundLocation' | 'notifications' | 'battery';
+/** true granted · false missing · null this APK cannot tell (older build). */
+export type PermState = Record<PermKind, boolean | null>;
+
+const GEO_OK_KEY = 'moviy-geo-ok';
+
+/** Does the installed APK's MoviyDriver plugin really have this method? */
+function pluginHas(method: string): boolean {
+  const p = driverPlugin();
+  if (!p || typeof p[method] !== 'function') return false;
+  const headers = (cap() as any)?.PluginHeaders;
+  if (!Array.isArray(headers)) return false;
+  const h = headers.find((x: any) => x?.name === 'MoviyDriver');
+  return !!h && Array.isArray(h.methods) && h.methods.some((m: any) => m?.name === method);
+}
+
+export async function permissionState(): Promise<PermState> {
+  if (!isNativeApp()) return { location: true, backgroundLocation: true, notifications: true, battery: true };
+  if (pluginHas('permissionState')) {
+    try {
+      const r = await driverPlugin().permissionState();
+      return {
+        location: !!r?.location,
+        backgroundLocation: !!r?.backgroundLocation,
+        notifications: !!r?.notifications,
+        battery: !!r?.battery,
+      };
+    } catch {
+      /* fall through to the older-APK checks */
+    }
+  }
+  // APK ≤ 1.0.6: location through the WebView, notifications through the plugin.
+  let notifications: boolean | null = null;
+  try {
+    const st = await cap()?.Plugins?.LocalNotifications?.checkPermissions();
+    if (st?.display) notifications = st.display === 'granted';
+  } catch {
+    /* unknown */
+  }
+  let geoOk = false;
+  try {
+    geoOk = localStorage.getItem(GEO_OK_KEY) === '1';
+  } catch {
+    /* storage blocked */
+  }
+  return { location: geoOk, backgroundLocation: null, notifications, battery: null };
+}
+
+export async function askPermission(kind: PermKind): Promise<PermState> {
+  if (pluginHas('askPermission')) {
+    try {
+      await driverPlugin().askPermission({ kind });
+    } catch {
+      /* denied — the screen shows the settings button */
+    }
+    return permissionState();
+  }
+  if (kind === 'location' && typeof navigator !== 'undefined' && navigator.geolocation) {
+    const ok = await new Promise<boolean>((resolve) =>
+      navigator.geolocation.getCurrentPosition(
+        () => resolve(true),
+        (e) => resolve(e.code !== e.PERMISSION_DENIED),
+        { timeout: 15000, maximumAge: 600000 },
+      ),
+    );
+    try {
+      localStorage.setItem(GEO_OK_KEY, ok ? '1' : '0');
+    } catch {
+      /* storage blocked */
+    }
+  }
+  if (kind === 'notifications') {
+    try {
+      await cap()?.Plugins?.LocalNotifications?.requestPermissions();
+    } catch {
+      /* denied */
+    }
+  }
+  return permissionState();
+}
+
+/** The app's page in Android settings (for a permission denied for good). */
+export function openAppSettings(): void {
+  if (pluginHas('openAppSettings')) {
+    driverPlugin()
+      .openAppSettings()
+      .catch(() => undefined);
+    return;
+  }
+  openNativeLocationSettings();
+}

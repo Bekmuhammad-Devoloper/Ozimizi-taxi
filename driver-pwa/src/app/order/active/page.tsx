@@ -144,7 +144,7 @@ function ActiveInner() {
   };
 
   const cancel = async () => {
-    if (!confirm('Buyurtmani bekor qilishni tasdiqlaysizmi?')) return;
+    if (!confirm('Buyurtmani qaytarasizmi? U boshqa haydovchilarga o‘rtaga tushadi.')) return;
     setBusy(true);
     setErr(null);
     try {
@@ -470,7 +470,7 @@ function ActiveInner() {
             disabled={busy}
             className="mt-3 w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm font-semibold active:scale-[0.98]"
           >
-            <XCircle size={16} /> Bekor qilish
+            <XCircle size={16} /> Buyurtmani qaytarish
           </button>
         )}
       </section>
