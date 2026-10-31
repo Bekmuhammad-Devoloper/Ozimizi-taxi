@@ -349,7 +349,10 @@ export class FoodService implements OnModuleInit {
   // ============================================================ delivery fee
 
   private async feeSettings() {
-    const n = async (k: 'delivery_base_fee' | 'delivery_free_km' | 'delivery_per_km' | 'delivery_commission_percent', d: number) => {
+    const n = async (
+      k: 'delivery_base_fee' | 'delivery_free_km' | 'delivery_per_km' | 'delivery_commission_percent' | 'delivery_extra_stop_fee',
+      d: number,
+    ) => {
       const raw = (await this.settings.get(k)).trim();
       const v = raw === '' ? d : Number(raw);
       return Number.isFinite(v) && v >= 0 ? v : d;
@@ -359,7 +362,130 @@ export class FoodService implements OnModuleInit {
       freeKm: await n('delivery_free_km', 2),
       perKm: await n('delivery_per_km', 2000),
       commissionPct: Math.min(100, await n('delivery_commission_percent', 10)),
+      extraStop: await n('delivery_extra_stop_fee', 3000),
     };
+  }
+
+  // ------------------------------------------------------------ group orders
+  // A client ordering from several kitchens at once gets ONE courier who
+  // collects everything, and pays ONE delivery fee: the farthest kitchen's
+  // price + an admin-set amount for every extra kitchen. The group's first
+  // order carries that fee, the others carry 0.
+
+  /** Live orders placed together with `o` (same group, delivered to one point), oldest first. */
+  private async groupOrders(o: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>): Promise<FoodOrder[]> {
+    if (!o.groupId || o.deliveryType !== 'delivery') return [];
+    return this.orders.find({
+      where: {
+        groupId: o.groupId,
+        clientId: o.clientId ?? IsNull(),
+        deliveryType: 'delivery',
+        status: In(['NEW', 'COOKING', 'READY', 'PICKED_UP', 'DELIVERED']),
+      },
+      relations: { kitchen: true },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /** One delivery fee for several kitchens going to the same point. */
+  async groupQuote(ks: Kitchen[], toLat: number, toLng: number) {
+    const s = await this.feeSettings();
+    if (!ks.length) return { km: 0, fee: 0, mode: 'courier' as const, extraStopFee: s.extraStop };
+    const qs = await Promise.all(ks.map((k) => this.quoteFor(k, toLat, toLng)));
+    return {
+      km: Math.max(...qs.map((q) => q.km)),
+      fee: Math.max(...qs.map((q) => q.fee)) + s.extraStop * (qs.length - 1),
+      mode: qs.some((q) => q.mode === 'taxi') ? ('taxi' as const) : ('courier' as const),
+      extraStopFee: s.extraStop,
+    };
+  }
+
+  /** Client checkout: the delivery fee for these kitchens together. */
+  async groupQuoteForClient(kitchenIds: string[], lat: number, lng: number) {
+    const ids = Array.from(new Set(kitchenIds.filter(Boolean))).slice(0, 20);
+    const ks = ids.length ? await this.kitchens.find({ where: { id: In(ids), isActive: true } }) : [];
+    // Same order as asked: the first kitchen's order carries the fee.
+    ks.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    return this.groupQuote(ks, lat, lng);
+  }
+
+  /**
+   * Spread the group's single delivery fee: the first live order carries it,
+   * the rest get 0; all share one courier mode and need a courier. Skipped
+   * once anything was picked up (the courier is already on the way).
+   */
+  private async repriceGroup(any: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>) {
+    const list = await this.groupOrders(any);
+    if (!list.length || list.some((o) => ['PICKED_UP', 'DELIVERED'].includes(o.status))) return list;
+    const lead = list[0];
+    const q = await this.groupQuote(list.map((o) => o.kitchen), Number(lead.lat), Number(lead.lng));
+    for (const o of list) {
+      const fee = o.id === lead.id ? q.fee : 0;
+      const total = Number(o.itemsTotal) + fee;
+      const needsCourier = list.length > 1 ? true : o.needsCourier;
+      if (Number(o.deliveryFee) === fee && o.courierMode === q.mode && o.needsCourier === needsCourier) continue;
+      const patch = { deliveryFee: fee.toFixed(2), total: total.toFixed(2), courierMode: q.mode, needsCourier };
+      await this.orders.update(o.id, patch);
+      Object.assign(o, patch);
+      // The bonus held for this order can't be more than its new total.
+      const over = Number(o.bonusUsed ?? 0) - total;
+      if (over > 0 && o.clientId) {
+        await this.balance
+          .adjustClient({ clientId: o.clientId, amount: over, note: `Ovqat #${o.number} — yetkazish bitta bo‘ldi, bonus qaytdi` })
+          .catch((e) => this.logger.error(`group bonus refund failed #${o.number}: ${(e as Error).message}`));
+        o.bonusUsed = total.toFixed(2);
+        await this.orders.update(o.id, { bonusUsed: o.bonusUsed });
+      }
+    }
+    return list;
+  }
+
+  /**
+   * A group order needs a courier: if a sibling already has one, it simply
+   * joins that courier; if a sibling is being offered right now, that offer
+   * covers it. Returns true when no separate dispatch is needed.
+   */
+  private async joinGroupCourier(orderId: string): Promise<boolean> {
+    const o = await this.orders.findOne({ where: { id: orderId } });
+    if (!o) return true;
+    const siblings = (await this.groupOrders(o)).filter((s) => s.id !== o.id);
+    if (!siblings.length) return false;
+    const carrier = siblings.find((s) => s.courierId && ['NEW', 'COOKING', 'READY', 'PICKED_UP'].includes(s.status));
+    if (carrier?.courierId) {
+      const res = await this.orders
+        .createQueryBuilder()
+        .update(FoodOrder)
+        .set({ courierId: carrier.courierId, courierAssignedAt: () => 'now()' })
+        .where(`id = :id AND courier_id IS NULL`, { id: o.id })
+        .execute();
+      if (res.affected) {
+        const d = await this.drivers.findOne({ where: { id: carrier.courierId } });
+        await this.logEvent(o.id, 'accepted', carrier.courierId, { ...this.label(d), stage: 'group' });
+        this.realtime.emitToDriver(carrier.courierId, 'delivery_update', { orderId: o.id, status: o.status, groupId: o.groupId });
+        await this.notify(await this.orders.findOneOrFail({ where: { id: o.id } }));
+      }
+      return true;
+    }
+    return siblings.some((s) => this.dispatch.has(s.id));
+  }
+
+  /** The courier took one order of a group → the rest of the group is his too. */
+  private async takeGroup(driverId: string, o: FoodOrder) {
+    for (const s of await this.groupOrders(o)) {
+      if (s.id === o.id || s.courierId || !['NEW', 'COOKING', 'READY'].includes(s.status)) continue;
+      const res = await this.orders
+        .createQueryBuilder()
+        .update(FoodOrder)
+        .set({ courierId: driverId, courierAssignedAt: () => 'now()', needsCourier: true })
+        .where(`id = :id AND courier_id IS NULL AND status IN ('NEW','COOKING','READY')`, { id: s.id })
+        .execute();
+      if (!res.affected) continue;
+      this.endDispatch(s.id);
+      this.realtime.emitToAllDrivers('order_taken', { orderId: s.id });
+      const d = await this.drivers.findOne({ where: { id: driverId } });
+      await this.logEvent(s.id, 'accepted', driverId, { ...this.label(d), stage: 'group' });
+      await this.notify(await this.orders.findOneOrFail({ where: { id: s.id } }));
+    }
   }
 
   /** Road km between two points and the delivery fee (rounded to 1 000). */
@@ -549,6 +675,7 @@ export class FoodService implements OnModuleInit {
         this.logger.warn(`food bonus hold failed: ${(e as Error).message}`);
       }
     }
+    if (saved.groupId && saved.deliveryType === 'delivery') await this.repriceGroup(saved);
     const full = await this.orders.findOneOrFail({ where: { id: saved.id } });
     await this.logEvent(full.id, 'created', null, {
       kitchenName: kitchen.name,
@@ -703,6 +830,7 @@ export class FoodService implements OnModuleInit {
     o.prepMinutes = Math.min(180, Math.max(1, Math.round(Number(prepMinutes) || k.prepMinutes)));
     // The kitchen decides per order: platform courier, or its own delivery.
     if (o.deliveryType === 'pickup') o.needsCourier = false;
+    else if ((await this.groupOrders(o)).length > 1) o.needsCourier = true; // one courier collects the whole group
     else if (needsCourier !== undefined) o.needsCourier = !!needsCourier;
     await this.orders.save(o);
     await this.logEvent(o.id, 'kitchen_accepted', null, {
@@ -904,6 +1032,7 @@ export class FoodService implements OnModuleInit {
     o.cancelledAt = new Date();
     await this.orders.save(o);
     await this.refundBonus(o);
+    await this.repriceGroup(o);
     await this.logEvent(o.id, 'kitchen_rejected', null, { reason: o.rejectReason });
     await this.notify(o);
     return this.clientView(o);
@@ -962,6 +1091,15 @@ export class FoodService implements OnModuleInit {
 
   private startDispatch(orderId: string, stage: 'own' | 'personal' | 'all') {
     if (this.dispatch.has(orderId)) return;
+    void this.joinGroupCourier(orderId)
+      .then((joined) => {
+        if (!joined) this.beginDispatch(orderId, stage);
+      })
+      .catch((e) => this.logger.warn(`delivery dispatch ${orderId}: ${(e as Error).message}`));
+  }
+
+  private beginDispatch(orderId: string, stage: 'own' | 'personal' | 'all') {
+    if (this.dispatch.has(orderId)) return;
     this.dispatch.set(orderId, {
       stage,
       offeredTo: null,
@@ -990,6 +1128,38 @@ export class FoodService implements OnModuleInit {
   }
 
   private async offerPayload(o: FoodOrder, k: Kitchen, km: number, mode: 'personal' | 'all', offerSeconds: number) {
+    const group = (await this.groupOrders(o)).filter((g) => !['DELIVERED'].includes(g.status));
+    if (group.length > 1) {
+      const names = group.map((g) => g.kitchen.name);
+      return {
+        kind: 'delivery',
+        orderId: o.id,
+        number: o.number,
+        mode,
+        offerSeconds,
+        pickup: { lat: k.lat, lng: k.lng, address: `🍽 ${group.length} ta oshxona: ${names.join(', ')}` },
+        destination: { lat: o.lat, lng: o.lng, address: o.address },
+        distanceFromDriver: Number(km.toFixed(2)),
+        estimatedKm: Math.max(...group.map((g) => Number(g.distanceKm ?? 0))),
+        estimatedPrice: group.reduce((s, g) => s + Number(g.deliveryFee), 0),
+        kitchenName: names.join(', '),
+        itemsCount: group.reduce((s, g) => s + (g.items ?? []).reduce((n, i) => n + i.qty, 0), 0),
+        total: group.reduce((s, g) => s + Number(g.total), 0),
+        readyAt: o.readyAt,
+        prepMinutes: o.prepMinutes,
+        createdAt: o.createdAt,
+        groupSize: group.length,
+        stops: group.map((g) => ({
+          orderId: g.id,
+          number: g.number,
+          kitchenName: g.kitchen.name,
+          lat: g.kitchen.lat,
+          lng: g.kitchen.lng,
+          address: g.kitchen.address,
+          status: g.status,
+        })),
+      };
+    }
     return {
       kind: 'delivery',
       orderId: o.id,
@@ -1026,7 +1196,8 @@ export class FoodService implements OnModuleInit {
     const mode = o.courierMode === 'taxi' ? 'taxi' : 'courier';
 
     // 1) The kitchen's own couriers ring first (all of them at once).
-    if (st.stage === 'personal' && st.rounds === 0 && st.tried.size === 0 && mode === 'courier') {
+    const isGroup = (await this.groupOrders(o)).length > 1;
+    if (st.stage === 'personal' && st.rounds === 0 && st.tried.size === 0 && mode === 'courier' && !isGroup) {
       const ownIds = new Set((await this.kitchenCouriers.find({ where: { kitchenId: k.id } })).map((r) => r.driverId));
       const own = ownIds.size ? (await this.freeCouriers('courier')).filter((d) => ownIds.has(d.id)) : [];
       if (own.length) {
@@ -1224,7 +1395,12 @@ export class FoodService implements OnModuleInit {
     });
     const cfg = await this.dispatchCfg();
     const out: any[] = [];
+    const seenGroups = new Set<string>();
     for (const o of rows) {
+      if (o.groupId && o.deliveryType === 'delivery') {
+        if (seenGroups.has(o.groupId)) continue;
+        seenGroups.add(o.groupId);
+      }
       if (!this.canTake(driverId, o.id)) continue;
       if (o.courierMode === 'taxi' && d.kind === 'courier') continue;
       const km = d.currentLat != null && d.currentLng != null ? haversineKm(o.kitchen.lat, o.kitchen.lng, d.currentLat, d.currentLng) : 0;
@@ -1269,17 +1445,26 @@ export class FoodService implements OnModuleInit {
       rangSec: rangAt ? Math.round((Date.now() - rangAt) / 1000) : 0,
     });
     const o = await this.orders.findOneOrFail({ where: { id }, relations: { kitchen: true, courier: true } });
+    await this.takeGroup(driverId, o);
     await this.notify(o);
     return this.courierView(o);
   }
 
   async courierActive(driverId: string) {
-    const o = await this.orders.findOne({
-      where: { courierId: driverId, status: In(ACTIVE_COURIER) },
+    const mine = await this.orders.find({
+      where: { courierId: driverId, status: In(['NEW', ...ACTIVE_COURIER]) },
       relations: { kitchen: true, courier: true, client: true },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: 'ASC' },
     });
-    return o ? this.courierView(o) : null;
+    if (!mine.length) return null;
+    // Several kitchens of one group: show the next kitchen to visit first.
+    const o =
+      mine.find((x) => ['COOKING', 'READY'].includes(x.status)) ?? mine.find((x) => x.status === 'NEW') ?? mine[mine.length - 1];
+    const group = o.groupId ? mine.filter((x) => x.groupId === o.groupId) : [o];
+    return {
+      ...this.courierView(o),
+      group: group.length > 1 ? group.map((x) => this.courierView(x)) : null,
+    };
   }
 
   async courierHistory(driverId: string) {
@@ -1319,6 +1504,20 @@ export class FoodService implements OnModuleInit {
   }
 
   async courierDelivered(driverId: string, id: string) {
+    const o = await this.courierOrder(driverId, id);
+    if (o.status === 'DELIVERED') return this.courierView(o);
+    // One drop-off for the whole group: every kitchen must be collected first.
+    const group = (await this.groupOrders(o)).filter((g) => g.courierId === driverId && g.id !== o.id);
+    if (group.length) {
+      if ([o, ...group].some((g) => !['PICKED_UP', 'DELIVERED'].includes(g.status))) {
+        throw new BadRequestException('Avval hamma oshxonadan buyurtmani oling');
+      }
+      for (const g of group) if (g.status === 'PICKED_UP') await this.deliverOne(driverId, g.id);
+    }
+    return this.deliverOne(driverId, id);
+  }
+
+  private async deliverOne(driverId: string, id: string) {
     const o = await this.courierOrder(driverId, id);
     if (o.status === 'DELIVERED') return this.courierView(o);
     if (o.status !== 'PICKED_UP') throw new BadRequestException('Avval “Buyurtmani oldim” ni bosing');
@@ -1391,12 +1590,20 @@ export class FoodService implements OnModuleInit {
   /** Courier gives the order back before pickup → it is dispatched again. */
   async courierRelease(driverId: string, id: string) {
     const o = await this.courierOrder(driverId, id);
-    if (!['COOKING', 'READY'].includes(o.status)) throw new BadRequestException('Olingan buyurtmani qaytarib bo‘lmaydi');
-    await this.orders.update(o.id, { courierId: null, courierAssignedAt: null });
-    await this.logEvent(o.id, 'released', driverId, this.label(o.courier));
-    const fresh = await this.orders.findOneOrFail({ where: { id }, relations: { kitchen: true } });
-    await this.notify(fresh);
-    this.startDispatch(o.id, 'personal');
+    if (!['NEW', 'COOKING', 'READY'].includes(o.status)) throw new BadRequestException('Olingan buyurtmani qaytarib bo‘lmaydi');
+    const group = (await this.groupOrders(o)).filter((g) => g.courierId === driverId);
+    const all = group.length ? group : [o];
+    if (all.some((g) => g.status === 'PICKED_UP')) {
+      throw new BadRequestException('Bir oshxonadan olib bo‘lgansiz — guruhni qaytarib bo‘lmaydi');
+    }
+    for (const g of all) {
+      await this.orders.update(g.id, { courierId: null, courierAssignedAt: null });
+      await this.logEvent(g.id, 'released', driverId, this.label(o.courier));
+      await this.notify(await this.orders.findOneOrFail({ where: { id: g.id }, relations: { kitchen: true } }));
+    }
+    // One search for the whole group (the others join whoever takes it).
+    const first = all.find((g) => ['COOKING', 'READY'].includes(g.status));
+    if (first) this.beginDispatch(first.id, 'personal');
     return { ok: true };
   }
 
@@ -1446,6 +1653,7 @@ export class FoodService implements OnModuleInit {
     o.cancelledAt = new Date();
     await this.orders.save(o);
     await this.refundBonus(o);
+    await this.repriceGroup(o);
     this.endDispatch(o.id);
     this.realtime.emitToAllDrivers('order_taken', { orderId: o.id });
     if (o.courierId) this.realtime.emitToDriver(o.courierId, 'delivery_update', { orderId: o.id, status: 'CANCELLED' });

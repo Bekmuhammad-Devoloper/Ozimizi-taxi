@@ -288,6 +288,15 @@ export class ClientFoodController {
     return this.food.kitchenForClient(id, num(lat), num(lng));
   }
 
+  /** One delivery fee for several kitchens to one point (checkout with a multi-kitchen cart). */
+  @Get('group-quote')
+  groupQuote(@Query('kitchenIds') kitchenIds?: string, @Query('lat') lat?: string, @Query('lng') lng?: string) {
+    const la = num(lat);
+    const ln = num(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) throw new BadRequestException('lat/lng kerak');
+    return this.food.groupQuoteForClient(String(kitchenIds ?? '').split(','), la!, ln!);
+  }
+
   /** How much of an order of this size may be paid from bonus. */
   @Get('bonus-max')
   bonusMax(@CurrentUser() u: JwtPayload, @Query('total') total?: string) {

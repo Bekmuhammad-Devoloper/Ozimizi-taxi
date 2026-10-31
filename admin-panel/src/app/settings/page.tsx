@@ -32,6 +32,7 @@ interface SettingsMap {
   delivery_free_km: string;
   delivery_per_km: string;
   delivery_commission_percent: string;
+  delivery_extra_stop_fee: string;
 }
 
 /** Backend defaults used while a delivery key is left empty. */
@@ -40,6 +41,7 @@ const DELIVERY_DEFAULTS = {
   delivery_free_km: 2,
   delivery_per_km: 2000,
   delivery_commission_percent: 10,
+  delivery_extra_stop_fee: 3000,
 } as const;
 
 const EMPTY: SettingsMap = {
@@ -69,6 +71,7 @@ const EMPTY: SettingsMap = {
   delivery_free_km: '',
   delivery_per_km: '',
   delivery_commission_percent: '',
+  delivery_extra_stop_fee: '',
 };
 
 const BUTTON_ICONS: { key: keyof SettingsMap; label: string }[] = [
@@ -410,7 +413,13 @@ function DeliverySection({
         {numField('delivery_free_km', 'Bepul km (shu masofagacha qo‘shimcha yo‘q)', true)}
         {numField('delivery_per_km', "Har qo‘shimcha 1 km (so'm)")}
         {numField('delivery_commission_percent', 'Kuryer komissiyasi (%)', true)}
+        {numField('delivery_extra_stop_fee', "Har qo‘shimcha oshxona uchun (so'm)")}
       </div>
+      <p className="text-xs text-neutral-500 mb-3">
+        Mijoz bir nechta oshxonadan buyurtma bersa, <b>bitta kuryer</b> hammasini yig‘ib keladi va
+        yetkazish bir marta olinadi: <b>eng uzoq oshxona narxi + har qo‘shimcha oshxona uchun</b>{' '}
+        {f(deliveryValue(form, 'delivery_extra_stop_fee'))} so‘m.
+      </p>
       <div className="rounded-xl border border-line bg-neutral-50/60 p-3 text-xs text-neutral-600 space-y-1">
         <p className="font-semibold text-neutral-700">Hisob namunasi:</p>
         {examples.map((km) => (

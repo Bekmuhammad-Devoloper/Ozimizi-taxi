@@ -63,6 +63,8 @@ export interface DeliveryView {
   kitchen: DeliveryKitchen | null;
   clientName?: string | null;
   courierCommission?: number;
+  /** Several kitchens of one client order: one courier collects them all. */
+  group?: DeliveryView[] | null;
 }
 
 /** Offer-shaped payload (GET /driver/deliveries/available). */
@@ -86,9 +88,13 @@ export interface DeliveryOffer {
   readyAt?: string | null;
   prepMinutes?: number | null;
   createdAt?: string | null;
+  /** Several kitchens → one job: how many and which. */
+  groupSize?: number | null;
+  stops?: { orderId: string; number: number; kitchenName: string; lat: number; lng: number; address?: string | null; status: DeliveryStatus }[] | null;
 }
 
-export const LIVE_DELIVERY_STATUSES: DeliveryStatus[] = ['COOKING', 'READY', 'PICKED_UP'];
+// NEW: a group's kitchen that has not accepted yet, already assigned to this courier.
+export const LIVE_DELIVERY_STATUSES: DeliveryStatus[] = ['NEW', 'COOKING', 'READY', 'PICKED_UP'];
 
 /** The delivery is still being carried out (not delivered / cancelled). */
 export function isDeliveryLive(d?: DeliveryView | null): d is DeliveryView {

@@ -108,12 +108,32 @@ function Inner() {
     router.replace('/dashboard');
   };
 
-  const act = async (path: 'picked-up' | 'delivered') => {
+  // Several kitchens of one client: collect from each, then one hand-over.
+  const group = d.group && d.group.length > 1 ? d.group : null;
+  const sum = (k: 'total' | 'itemsTotal' | 'deliveryFee') =>
+    group ? group.reduce((s, g) => s + Number(g[k] ?? 0), 0) : Number(d[k] ?? 0);
+  const cashAll = sum('total');
+  const itemsAll = sum('itemsTotal');
+  const feeAll = sum('deliveryFee');
+  const allPicked = group
+    ? group.every((g) => g.status === 'PICKED_UP' || g.status === 'DELIVERED')
+    : d.status === 'PICKED_UP';
+
+  const act = async (path: 'picked-up' | 'delivered', id = d.id) => {
     setBusy(true);
     setErr(null);
     try {
-      const { data } = await api.post<DeliveryView>(`/driver/deliveries/${d.id}/${path}`);
-      setDelivery({ ...d, ...data });
+      const { data } = await api.post<DeliveryView>(`/driver/deliveries/${id}/${path}`);
+      if (group && path === 'picked-up') {
+        // The next kitchen becomes the current stop.
+        await syncActiveDelivery();
+        return;
+      }
+      setDelivery(
+        group && path === 'delivered'
+          ? { ...d, ...data, group: group.map((g) => ({ ...g, status: 'DELIVERED' as DeliveryStatus })) }
+          : { ...d, ...data },
+      );
       if (path === 'delivered') {
         api.get('/driver/me').then((r) => setDriver(r.data)).catch(() => {});
       }
@@ -126,18 +146,18 @@ function Inner() {
     }
   };
 
-  const pickedUp = () => {
+  const pickedUp = (stop: Pick<DeliveryView, 'id' | 'status'> = d) => {
     if (
-      d.status === 'COOKING' &&
+      stop.status === 'COOKING' &&
       !confirm('Oshxona hali “tayyor” deb belgilamagan. Buyurtmani qo‘lingizga oldingizmi?')
     ) {
       return;
     }
-    void act('picked-up');
+    void act('picked-up', stop.id);
   };
 
   const delivered = () => {
-    if (!confirm(`Buyurtma mijozga topshirildi va ${fmt(d.total)} so‘m naqd olindimi?`)) return;
+    if (!confirm(`Buyurtma mijozga topshirildi va ${fmt(cashAll)} so‘m naqd olindimi?`)) return;
     void act('delivered');
   };
 
@@ -157,7 +177,7 @@ function Inner() {
     }
   };
 
-  const picked = d.status === 'PICKED_UP';
+  const picked = allPicked;
   const itemsCount = (d.items ?? []).reduce((s, i) => s + Number(i.qty ?? 0), 0);
   const commission = Number(d.courierCommission ?? 0);
 
@@ -242,14 +262,14 @@ function Inner() {
               <CheckCircle2 size={20} className="text-gold-deep" />
               <p className="text-base font-bold">Yetkazildi</p>
             </div>
-            <SummaryRow label="Mijozdan olingan naqd" value={`${fmt(d.total)} so‘m`} bold />
-            <SummaryRow label="Taomlar" value={`${fmt(d.itemsTotal)} so‘m`} />
-            <SummaryRow label="Yetkazish haqi" value={`${fmt(d.deliveryFee)} so‘m`} />
+            <SummaryRow label="Mijozdan olingan naqd" value={`${fmt(cashAll)} so‘m`} bold />
+            <SummaryRow label="Taomlar" value={`${fmt(itemsAll)} so‘m`} />
+            <SummaryRow label="Yetkazish haqi" value={`${fmt(feeAll)} so‘m`} />
             <SummaryRow label="Komissiya" value={`-${fmt(commission)} so‘m`} />
             <div className="border-t border-line pt-2 mt-2">
               <SummaryRow
                 label="Sof daromad"
-                value={`+${fmt(Number(d.deliveryFee) - commission)} so‘m`}
+                value={`+${fmt(feeAll - commission)} so‘m`}
                 bold
               />
             </div>
@@ -359,6 +379,15 @@ function Inner() {
     <>
       {header}
 
+      {group && (
+        <GroupStops
+          group={group}
+          current={d.id}
+          busy={busy}
+          onPick={(g) => pickedUp(g)}
+        />
+      )}
+
       {/* The current target first: the kitchen, then the client. */}
       {picked ? (
         <>
@@ -408,11 +437,12 @@ function Inner() {
             Mijozdan olinadi (naqd)
           </p>
           <p className="relative mt-2 text-5xl font-extrabold tabular-nums leading-none">
-            {fmt(d.total)}
+            {fmt(cashAll)}
             <span className="ml-2 text-base font-normal text-neutral-400">so‘m</span>
           </p>
           <p className="relative mt-2 text-xs text-neutral-400">
-            Taomlar {fmt(d.itemsTotal)} + yetkazish {fmt(d.deliveryFee)} so‘m
+            Taomlar {fmt(itemsAll)} + yetkazish {fmt(feeAll)} so‘m
+            {group ? ` · ${group.length} ta oshxona` : ''}
           </p>
         </div>
 
@@ -422,7 +452,7 @@ function Inner() {
               Sizning haqingiz
             </p>
             <p className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
-              {fmt(d.deliveryFee)}
+              {fmt(feeAll)}
             </p>
           </div>
           <div className="bg-gold/10 border border-gold/40 rounded-2xl p-4">
@@ -446,14 +476,21 @@ function Inner() {
 
       {/* ACTIONS */}
       <section className="px-6 mt-6 mb-4">
-        {(d.status === 'COOKING' || d.status === 'READY') && (
+        {!allPicked && d.status === 'NEW' && (
+          <p className="mb-3 text-sm text-center text-neutral-600">
+            {d.kitchen?.name ?? 'Oshxona'} buyurtmani hali tasdiqlamadi — tasdiqlashi bilan xabar keladi.
+          </p>
+        )}
+        {!allPicked && (d.status === 'COOKING' || d.status === 'READY' || d.status === 'NEW') && (
           <>
-            <PrimaryAction
-              icon={<PackageCheck size={18} strokeWidth={2.4} />}
-              onClick={pickedUp}
-              disabled={busy}
-              label="Buyurtmani oldim"
-            />
+            {d.status !== 'NEW' && (
+              <PrimaryAction
+                icon={<PackageCheck size={18} strokeWidth={2.4} />}
+                onClick={() => pickedUp()}
+                disabled={busy}
+                label={group ? `${d.kitchen?.name ?? 'Oshxona'}dan oldim` : 'Buyurtmani oldim'}
+              />
+            )}
             <button
               onClick={release}
               disabled={busy}
@@ -463,16 +500,92 @@ function Inner() {
             </button>
           </>
         )}
-        {d.status === 'PICKED_UP' && (
+        {allPicked && (
           <PrimaryAction
             icon={<CheckCircle2 size={18} strokeWidth={2.4} />}
             onClick={delivered}
             disabled={busy}
-            label="Yetkazildi, pulni oldim"
+            label={group ? `Hammasi yetkazildi, ${fmt(cashAll)} so‘m oldim` : 'Yetkazildi, pulni oldim'}
           />
         )}
       </section>
     </>
+  );
+}
+
+const STOP_LABEL: Partial<Record<DeliveryStatus, string>> = {
+  NEW: 'Oshxona hali tasdiqlamadi',
+  COOKING: 'Tayyorlanmoqda',
+  READY: 'Tayyor — olib keting',
+  PICKED_UP: 'Olindi ✓',
+  DELIVERED: 'Yetkazildi',
+};
+
+/** One client, several kitchens: every pick-up stop with its state and an "oldim" button. */
+function GroupStops({
+  group,
+  current,
+  busy,
+  onPick,
+}: {
+  group: DeliveryView[];
+  current: string;
+  busy: boolean;
+  onPick: (g: DeliveryView) => void;
+}) {
+  const done = group.filter((g) => g.status === 'PICKED_UP' || g.status === 'DELIVERED').length;
+  return (
+    <section className="px-6 mt-4">
+      <div className="bg-white border-2 border-gold rounded-2xl overflow-hidden">
+        <p className="px-4 pt-3 pb-2 text-sm font-bold">
+          🍽 {group.length} ta oshxonadan yig‘asiz · {done}/{group.length} olindi
+        </p>
+        <ul className="divide-y divide-line">
+          {group.map((g, i) => {
+            const picked = g.status === 'PICKED_UP' || g.status === 'DELIVERED';
+            const canPick = g.status === 'COOKING' || g.status === 'READY';
+            const count = (g.items ?? []).reduce((s, it) => s + Number(it.qty ?? 0), 0);
+            return (
+              <li key={g.id} className={'px-4 py-3 flex items-center gap-3 ' + (g.id === current ? 'bg-gold/10' : '')}>
+                <span
+                  className={
+                    'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ' +
+                    (picked ? 'bg-emerald-500 text-white' : 'bg-ink text-white')
+                  }
+                >
+                  {picked ? <Check size={16} strokeWidth={3} /> : i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate">{g.kitchen?.name ?? 'Oshxona'}</p>
+                  <p className="text-xs text-neutral-500">
+                    #{g.number} · {count} ta taom · {STOP_LABEL[g.status] ?? g.status}
+                  </p>
+                </div>
+                {g.kitchen?.phone && !picked && (
+                  <a
+                    href={`tel:${g.kitchen.phone}`}
+                    className="w-9 h-9 rounded-full border border-line flex items-center justify-center shrink-0"
+                    aria-label="Oshxonaga qo‘ng‘iroq"
+                  >
+                    <Phone size={15} />
+                  </a>
+                )}
+                {canPick && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onPick(g)}
+                    className="h-9 px-3 rounded-xl bg-gold text-ink text-xs font-bold shrink-0 active:scale-95 disabled:opacity-50"
+                  >
+                    Oldim
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </section>
   );
 }
 

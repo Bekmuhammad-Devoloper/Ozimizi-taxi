@@ -38,7 +38,8 @@ export type SettingKey =
   | 'delivery_base_fee'
   | 'delivery_free_km'
   | 'delivery_per_km'
-  | 'delivery_commission_percent';
+  | 'delivery_commission_percent'
+  | 'delivery_extra_stop_fee';
 
 export const SETTING_KEYS: SettingKey[] = [
   'instagram_url_1',
@@ -67,4 +68,5 @@ export const SETTING_KEYS: SettingKey[] = [
   'delivery_free_km',
   'delivery_per_km',
   'delivery_commission_percent',
+  'delivery_extra_stop_fee',
 ];

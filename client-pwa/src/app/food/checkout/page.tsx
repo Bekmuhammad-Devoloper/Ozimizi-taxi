@@ -77,6 +77,8 @@ function CheckoutInner() {
   /** Kitchen quotes for the drop-off point: fee, open state, address, coordinates. */
   const [quotes, setQuotes] = useState<Record<string, KitchenInfo>>({});
   const [quoting, setQuoting] = useState(false);
+  /** Several kitchens → one courier collects all: one delivery fee for the group. */
+  const [groupQuote, setGroupQuote] = useState<{ key: string; fee: number; mode: 'courier' | 'taxi'; km: number } | null>(null);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
   const [allow, setAllow] = useState<Record<string, BonusAllowance>>({});
@@ -133,7 +135,15 @@ function CheckoutInner() {
     const res = await Promise.allSettled(
       ids.map((id) => api.get<KitchenMenu>(`/client/food/kitchens/${id}`, { params: { lat: p.lat, lng: p.lng } }).then((r) => r.data)),
     );
+    const gq =
+      ids.length > 1
+        ? await api
+            .get('/client/food/group-quote', { params: { kitchenIds: ids.join(','), lat: p.lat, lng: p.lng } })
+            .then((r) => r.data)
+            .catch(() => null)
+        : null;
     if (seq !== quoteSeq.current) return;
+    setGroupQuote(gq ? { key: ids.join(','), fee: Number(gq.fee), mode: gq.mode, km: Number(gq.km) } : null);
     const next: Record<string, KitchenInfo> = {};
     const gone: string[] = [];
     let failed: unknown = null;
@@ -170,7 +180,13 @@ function CheckoutInner() {
   }, [center.lat, center.lng, idsKey, fetchQuotes]);
 
   const pickup = mode === 'pickup';
-  const feeOf = (id: string): number | null => (pickup ? 0 : quotes[id]?.deliveryFee ?? null);
+  // Several kitchens: the first order carries the group's one fee (as the server does), the rest 0.
+  const groupFee = groups.length > 1 && groupQuote?.key === idsKey ? groupQuote : null;
+  const feeOf = (id: string): number | null => {
+    if (pickup) return 0;
+    if (groups.length > 1) return groupFee ? (id === groups[0].kitchen.id ? groupFee.fee : 0) : null;
+    return quotes[id]?.deliveryFee ?? null;
+  };
   const orderTotal = (g: CartGroup) => cartSum(g.lines) + (feeOf(g.kitchen.id) ?? 0);
   const bonusKey = groups.map((g) => `${g.kitchen.id}:${orderTotal(g)}`).join('|');
 
@@ -272,8 +288,8 @@ function CheckoutInner() {
   const feeAll = rows.reduce((s, r) => s + (r.fee ?? 0), 0);
   const totalAll = itemsAll + feeAll;
   const cashAll = Math.max(0, totalAll - bonusAmt);
-  const km = !multi ? rows[0].q?.distanceKm ?? null : null;
-  const taxiFee = !pickup && rows.some((r) => r.q?.courierMode === 'taxi');
+  const km = !multi ? rows[0].q?.distanceKm ?? null : groupFee?.km ?? null;
+  const taxiFee = !pickup && (multi ? groupFee?.mode === 'taxi' : rows.some((r) => r.q?.courierMode === 'taxi'));
 
   const phoneOk = phone.replace(/\D/g, '').length >= 9;
   const blocked = rows.filter((r) => !r.isOpen || r.belowMin);
@@ -596,11 +612,11 @@ function CheckoutInner() {
                       <dd className="text-right font-semibold tabular-nums">{money(r.itemsTotal)} so‘m</dd>
                       <dt className="text-neutral-500 flex items-center gap-1">
                         {pickup ? <Store size={12} /> : r.q?.courierMode === 'taxi' ? <Car size={12} /> : <Bike size={12} />}
-                        {pickup ? 'Olib ketish' : r.q?.courierMode === 'taxi' ? 'Taksi yetkazadi' : 'Yetkazish'}
+                        {pickup ? 'Olib ketish' : taxiFee ? 'Taksi yetkazadi' : 'Yetkazish'}
                         {!pickup && r.q?.distanceKm != null && ` · ${fmtKm(r.q.distanceKm)}`}
                       </dt>
                       <dd className="text-right font-semibold tabular-nums">
-                        <FeeValue fee={r.fee} loading={quoting} />
+                        {!pickup && r.fee === 0 && groupFee ? 'umumiy narxda' : <FeeValue fee={r.fee} loading={quoting} />}
                       </dd>
                       {bonusHere > 0 && (
                         <>
@@ -659,11 +675,20 @@ function CheckoutInner() {
                 k={
                   <span className="flex items-center gap-1.5">
                     {pickup ? <Store size={14} className="text-gold-deep" /> : taxiFee ? <Car size={14} className="text-gold-deep" /> : <Bike size={14} className="text-gold-deep" />}
-                    {pickup ? 'O‘zim olib ketaman' : multi ? `Yetkazish · ${rows.length} ta` : `Yetkazish${km != null ? ` · ${fmtKm(km)}` : ''}`}
+                    {pickup
+                      ? 'O‘zim olib ketaman'
+                      : multi
+                        ? `Yetkazish · bitta kuryer, ${rows.length} ta oshxona`
+                        : `Yetkazish${km != null ? ` · ${fmtKm(km)}` : ''}`}
                   </span>
                 }
                 v={<FeeValue fee={pickup ? 0 : feeKnown ? feeAll : null} loading={quoting} />}
               />
+              {multi && !pickup && (
+                <p className="py-2 text-xs text-neutral-500 leading-snug">
+                  Bitta kuryer hamma oshxonadan yig‘ib keladi — yetkazish narxi bir marta olinadi.
+                </p>
+              )}
               {bonusAmt > 0 && <Row k={<span className="text-emerald-700">Bonusdan to‘lanadi</span>} v={<span className="text-emerald-700">− {money(bonusAmt)} so‘m</span>} />}
             </dl>
             {bonusAmt > 0 && (
