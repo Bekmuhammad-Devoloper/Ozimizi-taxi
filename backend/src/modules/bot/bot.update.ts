@@ -544,6 +544,28 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
       });
     });
 
+    // A driver's phone stopped answering offers → tell him on Telegram (the app may be dead).
+    this.orderEvents.onDriverUnreachable(({ driverId, missed }) => {
+      void (async () => {
+        const app = await this.applications.latestForDriver(driverId);
+        if (!app?.telegramId) return;
+        this.applicationEvents.emitToApplicant({
+          telegramId: app.telegramId,
+          applicationId: app.id,
+          html:
+            '<b>📵 Siz liniyadan chiqarildingiz</b>\n' +
+            `Telefoningiz ketma-ket ${missed} ta buyurtma signalini qabul qilmadi — mijozlar kutib qolmasligi uchun liniyadan chiqarildingiz.\n\n` +
+            '<b>Nima qilish kerak:</b>\n' +
+            '1. Moviy Taxi ilovasini oching va qayta liniyaga chiqing.\n' +
+            '2. Bildirishnomalarga ruxsat bering.\n' +
+            '3. Sozlamalar → Batareya: shu ilova uchun “Cheklovsiz” qiling.\n' +
+            '4. Xiaomi / Redmi / Poco: “Avtozapusk”ni yoqing.\n' +
+            '5. Ilovani eng oxirgi versiyaga yangilang.',
+          allowReply: false,
+        });
+      })().catch((e) => this.logger.warn(`unreachable notice failed: ${(e as Error).message}`));
+    });
+
     this.orderEvents.on('order.requeued', ({ order }) => {
       this.notifyClient(order.clientId, async (chatId) => {
         await this.bot.telegram.sendMessage(

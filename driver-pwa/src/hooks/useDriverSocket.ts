@@ -384,6 +384,12 @@ export function useDriverSocket({ enabled }: Options) {
     });
     // Admin broadcast. `kind: 'update'` = a new app version — shown as a
     // dialog with an "Yangilash" button (components/AppUpdate).
+    // Taken off the line by the server (the phone kept missing offers).
+    socket.on('driver_offline', () => {
+      const st = useAuthStore.getState();
+      if (st.driver) st.setDriver({ ...st.driver, isOnline: false });
+    });
+
     socket.on('announcement', (a: any) => {
       if (a?.kind === 'update') {
         useAppUpdateStore.getState().showAnnouncement({
@@ -545,6 +551,7 @@ export function useDriverSocket({ enabled }: Options) {
       socket.off('bonus_request');
       socket.off('order_message');
       socket.off('announcement');
+      socket.off('driver_offline');
       socket.off('connect');
       socket.off('order_cancelled');
       socket.off('wait_tick');

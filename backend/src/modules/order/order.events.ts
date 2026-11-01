@@ -45,6 +45,13 @@ export interface ReferralPaidPayload {
   referrerBonus: number;
 }
 
+/** A driver's phone kept missing order offers and was taken off the line. */
+export interface DriverUnreachablePayload {
+  driverId: string;
+  driverName: string;
+  missed: number;
+}
+
 @Injectable()
 export class OrderEvents {
   private readonly bus = new EventEmitter();
@@ -63,5 +70,13 @@ export class OrderEvents {
 
   onReferralPaid(listener: (payload: ReferralPaidPayload) => void) {
     this.bus.on('referral.paid', listener);
+  }
+
+  emitDriverUnreachable(payload: DriverUnreachablePayload) {
+    this.bus.emit('driver.unreachable', payload);
+  }
+
+  onDriverUnreachable(listener: (payload: DriverUnreachablePayload) => void) {
+    this.bus.on('driver.unreachable', listener);
   }
 }

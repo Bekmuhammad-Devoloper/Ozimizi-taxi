@@ -107,6 +107,37 @@ export class OrderService {
     }
   >();
 
+  // A phone that misses this many personal offers in a row (the alarm never
+  // confirmed) is taken off the line — clients must not wait 15 s on it each time.
+  private static readonly MISS_LIMIT = 3;
+  private readonly missed = new Map<string, number>();
+
+  private noteOfferReached(driverId: string) {
+    this.missed.delete(driverId);
+  }
+
+  private async noteOfferMissed(driverId: string) {
+    const n = (this.missed.get(driverId) ?? 0) + 1;
+    this.missed.set(driverId, n);
+    if (n < OrderService.MISS_LIMIT) return;
+    this.missed.delete(driverId);
+    const d = await this.drivers.findOne({ where: { id: driverId } });
+    if (!d?.isOnline) return;
+    await this.drivers.update(driverId, { isOnline: false });
+    this.logger.warn(`driver ${d.fullName} missed ${n} offers in a row → offline`);
+    this.realtime.emitToDriver(driverId, 'driver_offline', { reason: 'unreachable', missed: n });
+    this.realtime.emitToDriver(driverId, 'announcement', {
+      title: '📵 Liniyadan chiqarildingiz',
+      text:
+        `Telefoningiz ketma-ket ${n} ta buyurtma signalini qabul qilmadi. ` +
+        'Ilovani oching va qayta liniyaga chiqing. Signal kelishi uchun: bildirishnomalarga ruxsat bering, ' +
+        'batareya tejashni shu ilova uchun o‘chiring, Xiaomi/Redmi’da “Avtozapusk”ni yoqing.',
+      kind: 'info',
+    });
+    this.realtime.emitToAdmin('driver_auto_offline', { driverId, driverName: d.fullName, missed: n });
+    this.events.emitDriverUnreachable({ driverId, driverName: d.fullName, missed: n });
+  }
+
   // An order nobody took rings everyone again every minute, for up to 30 minutes.
   private static readonly RERING_MS = 60_000;
   private static readonly RERING_MAX = 30;
@@ -225,6 +256,7 @@ export class OrderService {
           cur.offeredTo = null;
           this.realtime.emitToDriver(next.d.id, 'order_offer_expired', { orderId });
           // Log first, then move on — keeps the admin timeline in order.
+          if (!rangAt) void this.noteOfferMissed(next.d.id).catch(() => undefined);
           void this.logEvent(orderId, 'expired', next.d.id, {
             ...this.driverLabel(next.d),
             waitedSec: Math.round((Date.now() - cur.offeredAt) / 1000),
@@ -274,6 +306,7 @@ export class OrderService {
 
   /** Driver pressed "Rad etish" on a personal offer → move on immediately. */
   async declineOffer(driverId: string, orderId: string) {
+    this.noteOfferReached(driverId);
     const st = this.dispatch.get(orderId);
     if (st?.stage === 'personal' && st.offeredTo === driverId) {
       const d = await this.drivers.findOne({ where: { id: driverId } });
@@ -309,6 +342,7 @@ export class OrderService {
       return { ok: true };
     }
     st.ringAt.set(driverId, Date.now());
+    this.noteOfferReached(driverId);
     const d = await this.drivers.findOne({ where: { id: driverId } });
     await this.logEvent(orderId, 'ringing', driverId, {
       ...this.driverLabel(d),
@@ -529,6 +563,7 @@ export class OrderService {
       });
       return order;
     });
+    this.noteOfferReached(driverId);
     if (acceptedLog) await this.logEvent(orderId, 'accepted', driverId, acceptedLog);
     return accepted;
   }
