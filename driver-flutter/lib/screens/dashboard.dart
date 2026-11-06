@@ -181,21 +181,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   SumLine(fmtSum(d?['balance']), size: 30, color: Colors.white),
                 ]),
               ),
-              const SizedBox(width: 12),
-              if (d?['isApproved'] == false)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: cardBox(color: const Color(0xFFFFEDD5), border: const Color(0xFFFDBA74), radius: 12),
-                  child: const T('Tasdiq kutilmoqda', weight: FontWeight.w700, color: orangeText),
-                )
-              else if (d?['profileComplete'] == false)
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: gold, foregroundColor: ink),
-                  icon: const Icon(Icons.warning_amber, size: 16),
-                  label: const T('Profilni to‘ldiring', weight: FontWeight.w700),
-                  onPressed: () => Navigator.pushNamed(context, '/profile'),
-                )
-              else
+              // The switch only when the driver may go on the line; otherwise the
+              // reason goes under the balance, at full width (it used to squeeze
+              // the balance onto two lines).
+              if (d?['isApproved'] != false && d?['profileComplete'] != false) ...[
+                const SizedBox(width: 12),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Caption(online ? 'Online' : 'Offline', color: online ? gold : n400),
                   Switch(
@@ -204,7 +194,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onChanged: _busy ? null : (_) => _toggle(),
                   ),
                 ]),
+              ],
             ]),
+            if (d?['isApproved'] == false) ...[
+              const SizedBox(height: 16),
+              const _LineNotice(
+                title: 'Hisobingiz tasdiq kutmoqda',
+                text: 'Administrator tasdiqlagach liniyaga chiqa olasiz.',
+              ),
+            ] else if (d?['profileComplete'] == false) ...[
+              const SizedBox(height: 16),
+              _LineNotice(
+                title: 'Liniyaga chiqish uchun profilni to‘ldiring',
+                text: missingProfile(d).isEmpty ? 'Profil sahifasini oching' : 'Yetishmayapti: ${missingProfile(d).join(', ')}',
+                onTap: () => Navigator.pushNamed(context, '/profile'),
+              ),
+            ],
             if (_err != null) ...[
               const SizedBox(height: 10),
               T(_err!, size: 12, color: const Color(0xFFFCA5A5)),
@@ -398,6 +403,52 @@ class _JobLink extends StatelessWidget {
                 ]),
               ),
               const Icon(Icons.chevron_right, size: 18, color: ink),
+            ]),
+          ),
+        ),
+      );
+}
+
+/// What the server still needs before the driver may go on the line
+/// (DriverService.isProfileComplete): a photo, and for taxi drivers the car.
+List<String> missingProfile(Json? d) {
+  if (d == null) return const [];
+  final out = <String>[];
+  if (textOf(d['avatarUrl']) == null) out.add('rasmingiz');
+  if (d['kind'] != 'courier') {
+    if (textOf(d['carModel']) == null) out.add('mashina modeli');
+    if (textOf(d['carColor']) == null) out.add('rangi');
+    if (textOf(d['carPlate']) == null) out.add('davlat raqami');
+  }
+  return out;
+}
+
+/// Why the online switch is not there, with the way to fix it.
+class _LineNotice extends StatelessWidget {
+  final String title;
+  final String text;
+  final VoidCallback? onTap;
+  const _LineNotice({required this.title, required this.text, this.onTap});
+  @override
+  Widget build(BuildContext context) => Material(
+        color: onTap != null ? gold : const Color(0xFFFFEDD5),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              Icon(Icons.warning_amber_rounded, size: 22, color: onTap != null ? ink : orangeText),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  T(title, weight: FontWeight.w800, color: onTap != null ? ink : orangeText),
+                  const SizedBox(height: 2),
+                  T(text, size: 12, color: onTap != null ? ink : orangeText),
+                ]),
+              ),
+              if (onTap != null) const Icon(Icons.chevron_right, color: ink),
             ]),
           ),
         ),

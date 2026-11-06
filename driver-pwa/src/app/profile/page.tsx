@@ -204,6 +204,11 @@ function Inner() {
             onChange={(e) => onAvatar(e.target.files?.[0])}
           />
         </div>
+        {!driver?.avatarUrl && (
+          <p className="relative mt-2 text-xs font-semibold text-orange-300">
+            Rasm yuklanmagan — bosib yuklang
+          </p>
+        )}
         <h1 className="relative mt-4 text-lg font-bold">
           {driver?.fullName ?? '—'}
         </h1>

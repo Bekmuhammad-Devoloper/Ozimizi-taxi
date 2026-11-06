@@ -594,6 +594,17 @@ void main() {
       expect(find.text(fmtSum(12345678)), findsOneWidget);
       expect(find.text(fmtSum(1250000)), findsOneWidget);
     });
+    // Profile not complete: the reason under the balance, the balance on one line.
+    final incomplete = {'balance': '999510.00', 'profileComplete': false, 'avatarUrl': null, 'carPlate': null, 'isOnline': false};
+    fake.routes['GET /driver/me'] = {..._driver, ...incomplete};
+    auth.setDriver(incomplete);
+    await show(const DashboardScreen(), 'big_incomplete', () {
+      expect(find.text(fmtSum(999510)), findsOneWidget);
+      expect(find.text('Yetishmayapti: rasmingiz, davlat raqami'), findsOneWidget);
+      expect(find.byType(Switch), findsNothing);
+    });
+    fake.routes['GET /driver/me'] = {..._driver, 'balance': '12345678.00', 'isOnline': false};
+    auth.setDriver({..._driver, 'balance': '12345678.00', 'isOnline': false});
     await show(const BalanceScreen(), 'big_balance');
     final ride = _order('IN_PROGRESS', {'startedAt': _now});
     fake.routes['GET /driver/orders/${ride['id']}'] = ride;

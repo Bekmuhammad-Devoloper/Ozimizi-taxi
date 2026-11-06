@@ -17,7 +17,7 @@ import {
 import { IOSSwitch } from '@/components/IOSSwitch';
 import { Shell } from '@/components/Shell';
 import { AnnouncementCard } from '@/components/AnnouncementCard';
-import { useAuthStore } from '@/stores/auth';
+import { DriverInfo, useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
 import { meterSession } from '@/hooks/useMeter';
@@ -183,18 +183,9 @@ function DashboardInner() {
             </FitText>
           </div>
 
-          {driver?.isApproved === false ? (
-            <span className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-orange-100 text-orange-800 text-sm font-bold border border-orange-300">
-              <AlertTriangle size={16} /> Tasdiq kutilmoqda
-            </span>
-          ) : driver?.profileComplete === false ? (
-            <Link
-              href="/profile"
-              className="shrink-0 h-12 px-4 inline-flex items-center gap-2 rounded-xl bg-gold text-ink text-sm font-bold shadow-lg shadow-gold/30 active:scale-[0.98]"
-            >
-              <AlertTriangle size={16} /> Profilni to‘ldiring
-            </Link>
-          ) : (
+          {/* The switch only when the driver may go on the line; otherwise the
+              reason goes under the balance, at full width. */}
+          {driver?.isApproved === false || driver?.profileComplete === false ? null : (
             <div className="shrink-0 flex flex-col items-end gap-2">
               <span
                 className={
@@ -213,6 +204,31 @@ function DashboardInner() {
             </div>
           )}
         </div>
+        {driver?.isApproved === false ? (
+          <div className="relative mt-4 rounded-2xl bg-orange-100 text-orange-900 border border-orange-300 p-3.5 flex items-start gap-3">
+            <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold">Hisobingiz tasdiq kutmoqda</p>
+              <p className="text-xs mt-0.5">Administrator tasdiqlagach liniyaga chiqa olasiz.</p>
+            </div>
+          </div>
+        ) : driver?.profileComplete === false ? (
+          <Link
+            href="/profile"
+            className="relative mt-4 rounded-2xl bg-gold text-ink p-3.5 flex items-center gap-3 shadow-lg shadow-gold/30 active:scale-[0.99]"
+          >
+            <AlertTriangle size={20} className="shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-extrabold">Liniyaga chiqish uchun profilni to‘ldiring</span>
+              <span className="block text-xs mt-0.5">
+                {missingProfile(driver).length
+                  ? `Yetishmayapti: ${missingProfile(driver).join(', ')}`
+                  : 'Profil sahifasini oching'}
+              </span>
+            </span>
+            <ChevronRight size={18} className="shrink-0" />
+          </Link>
+        ) : null}
         {err && <p className="relative mt-3 text-xs text-red-300">{err}</p>}
       </header>
 
@@ -472,6 +488,20 @@ function DashboardInner() {
       )}
     </>
   );
+}
+
+/** What the server still needs before going on the line (DriverService.isProfileComplete). */
+function missingProfile(d: DriverInfo | null | undefined): string[] {
+  if (!d) return [];
+  const out: string[] = [];
+  const empty = (v?: string | null) => !v || !String(v).trim();
+  if (empty(d.avatarUrl)) out.push('rasmingiz');
+  if (d.kind !== 'courier') {
+    if (empty(d.carModel)) out.push('mashina modeli');
+    if (empty(d.carColor)) out.push('rangi');
+    if (empty(d.carPlate)) out.push('davlat raqami');
+  }
+  return out;
 }
 
 function StatCard({

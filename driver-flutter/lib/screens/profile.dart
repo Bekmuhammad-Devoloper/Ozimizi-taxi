@@ -140,6 +140,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ]),
           ),
+          if (avatar == null) ...[
+            const SizedBox(height: 8),
+            const T('Rasm yuklanmagan — bosib yuklang', size: 12, weight: FontWeight.w600, color: Color(0xFFFDBA74)),
+          ],
           const SizedBox(height: 14),
           T(name, size: 18, weight: FontWeight.w700, color: Colors.white),
           T('${d?['phone'] ?? ''}', color: n400),
