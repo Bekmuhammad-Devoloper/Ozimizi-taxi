@@ -98,7 +98,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final d = auth.driver;
     final isCourier = auth.isCourier;
     final name = '${d?['fullName'] ?? '?'}';
-    final initials = name.split(' ').where((s) => s.isNotEmpty).map((s) => s[0]).take(2).join().toUpperCase();
     final avatar = fileUrl(d?['avatarUrl']);
     final car = fileUrl(d?['carPhotoUrl']);
     final today = DateTime.now();
@@ -130,8 +129,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CircleAvatar(
                 radius: 48,
                 backgroundColor: gold,
-                backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-                child: avatar == null ? T(initials.isEmpty ? '?' : initials, size: 24, weight: FontWeight.w800) : null,
+                backgroundImage: avatar != null
+                    ? NetworkImage(avatar)
+                    : const AssetImage('assets/img/default_avatar.jpg') as ImageProvider,
               ),
               const Positioned(
                 right: 0,

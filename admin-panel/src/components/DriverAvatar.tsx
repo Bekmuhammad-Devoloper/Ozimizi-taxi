@@ -1,5 +1,4 @@
 'use client';
-import { Car } from 'lucide-react';
 import { useState } from 'react';
 
 interface Props {
@@ -10,6 +9,8 @@ interface Props {
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+/** Shown for drivers who have not uploaded a photo. */
+const DEFAULT_AVATAR = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/img/default-avatar.jpg`;
 
 function resolveUrl(raw: string): string {
   if (!raw) return '';
@@ -19,8 +20,8 @@ function resolveUrl(raw: string): string {
 }
 
 /**
- * Driver avatar — uploaded photo when available, otherwise a Car icon.
- * Falls back to the icon on image load error too.
+ * Driver avatar — uploaded photo when available, otherwise the default
+ * picture. Falls back to the default on an image load error too.
  */
 export function DriverAvatar({
   fullName,
@@ -47,15 +48,12 @@ export function DriverAvatar({
     );
   }
   return (
-    <span
-      style={dim}
+    <img
+      src={DEFAULT_AVATAR}
+      alt={fullName}
       title={fullName}
-      className={
-        'rounded-full bg-gold/15 text-gold-deep flex items-center justify-center shrink-0 ' +
-        className
-      }
-    >
-      <Car size={Math.round(size * 0.5)} strokeWidth={2.2} />
-    </span>
+      style={dim}
+      className={'rounded-full object-cover ring-1 ring-line shrink-0 ' + className}
+    />
   );
 }

@@ -155,14 +155,6 @@ function Inner() {
     router.replace('/login');
   };
 
-  const initials = (driver?.fullName ?? '?')
-    .split(' ')
-    .map((s) => s[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   return (
     <>
       {/* HERO + AVATAR */}
@@ -197,7 +189,8 @@ function Inner() {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <span>{initials || '?'}</span>
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src="/img/default-avatar.jpg" alt="" width={96} height={96} className="w-full h-full object-cover" />
             )}
             <span className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-ink text-gold flex items-center justify-center ring-2 ring-gold">
               <Camera size={14} />

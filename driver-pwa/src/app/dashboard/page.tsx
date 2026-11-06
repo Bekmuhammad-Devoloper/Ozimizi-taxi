@@ -258,9 +258,14 @@ function DashboardInner() {
           href="/taximeter"
           className="mx-6 mt-4 flex items-center gap-4 rounded-2xl bg-ink text-white p-4 shadow-lg shadow-black/20 ring-1 ring-gold/30 active:scale-[0.99]"
         >
-          <span className="w-14 h-14 rounded-2xl bg-gold text-ink flex items-center justify-center text-2xl shrink-0">
-            🚖
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/img/taximeter.png"
+            alt=""
+            width={64}
+            height={64}
+            className="w-16 h-16 shrink-0 object-contain drop-shadow-[0_6px_14px_rgba(59,155,255,0.35)]"
+          />
           <span className="flex-1 min-w-0">
             <span className="block text-lg font-extrabold leading-tight">Taksometr</span>
             <span className="block text-xs text-neutral-400 mt-0.5">

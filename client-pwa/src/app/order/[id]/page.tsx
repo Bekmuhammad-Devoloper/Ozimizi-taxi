@@ -30,6 +30,9 @@ import { useOrderStore, isActiveStatus, ClientOrder } from '@/stores/order';
 import { useAuthStore } from '@/stores/auth';
 import { cn } from '@/lib/cn';
 
+/** Shown for drivers and couriers who have not uploaded a photo. */
+const DEFAULT_AVATAR = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/img/default-avatar.jpg`;
+
 /** GET /client/tariff — only the waiting part is needed here. */
 interface WaitTariff {
   waitingFreeMinutes: number;
@@ -410,7 +413,8 @@ function DriverCard({ d, order }: { d: NonNullable<ClientOrder['driver']>; order
           ) : d.avatarUrl ? (
             <Image src={assetUrl(d.avatarUrl)} alt="" width={56} height={56} className="w-full h-full object-cover" />
           ) : (
-            <Car size={24} className="text-neutral-400" />
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={DEFAULT_AVATAR} alt="" width={56} height={56} className="w-full h-full object-cover" />
           )}
         </span>
         <div className="flex-1 min-w-0">

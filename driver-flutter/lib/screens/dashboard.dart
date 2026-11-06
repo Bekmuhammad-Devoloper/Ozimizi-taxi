@@ -244,13 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: cardBox(color: ink, border: const Color(0x4D3B9BFF)),
                 child: Row(children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(16)),
-                    child: const Text('🚖', style: TextStyle(fontSize: 24)),
-                  ),
+                  Image.asset('assets/img/taximeter.png', width: 64, height: 64, fit: BoxFit.contain),
                   const SizedBox(width: 16),
                   const Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

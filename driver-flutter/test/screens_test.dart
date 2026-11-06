@@ -201,6 +201,18 @@ Future<void> _show(WidgetTester t, Widget home, {String? name, bool extraTall = 
   await t.pump(const Duration(milliseconds: 300));
   await t.pump(const Duration(milliseconds: 300));
   if (name != null) {
+    // Bundled pictures decode on a real thread: let them finish before the screenshot.
+    await t.runAsync(() async {
+      for (final e in find.byType(Image).evaluate()) {
+        final img = (e.widget as Image).image;
+        if (img is AssetImage) await precacheImage(img, e);
+      }
+      for (final e in find.byType(CircleAvatar).evaluate()) {
+        final img = (e.widget as CircleAvatar).backgroundImage;
+        if (img is AssetImage) await precacheImage(img, e);
+      }
+    });
+    await t.pump();
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/$name.png'));
   }
 }
