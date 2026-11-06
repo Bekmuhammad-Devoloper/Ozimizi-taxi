@@ -32,7 +32,7 @@ pkill -f "$E/backend/dist/main.js" 2>/dev/null || true
 NODE_OPTIONS="--require $E/loopback.js" nohup nice -n 10 node "$E/backend/dist/main.js" > "$E/backend.log" 2>&1 &
 for i in $(seq 1 40); do
   sleep 2
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6199/api/driver/me || true)
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6199/driver/me || true)
   [ "$code" = "401" ] && { echo "BACKEND-UP"; break; }
 done
 ss -ltn | grep ':6199' | cut -c1-80
