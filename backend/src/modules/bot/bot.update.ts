@@ -12,6 +12,8 @@ import {
   Update,
 } from 'nestjs-telegraf';
 import { Context, Markup, Telegraf, Input } from 'telegraf';
+import { DataSource } from 'typeorm';
+import { installBotLang, rememberLabels, setBotLang } from './bot-lang';
 import * as QRCode from 'qrcode';
 import { ClientService } from '../client/client.service';
 import { OrderService } from '../order/order.service';
@@ -94,6 +96,7 @@ const BTN = {
   contactAdmin: '👨‍💼 Admin bilan aloqa',
   myOrders: '🧾 Buyurtmalarim',
   settings: '⚙️ Sozlamalar',
+  language: '🌐 Til / Тил',
   cancel: '❌ Bekor qilish',
 };
 type BtnKey = keyof typeof BTN;
@@ -162,6 +165,7 @@ const settingsMenu = () =>
   Markup.keyboard([
     [menuBtn('promo'), menuBtn('invite')],
     [menuBtn('myOrders'), menuBtn('bonus')],
+    [menuBtn('language')],
     ['⬅️ Asosiy menyu'],
   ])
     .resize()
@@ -251,6 +255,7 @@ export class BotUpdate implements OnModuleInit {
     private readonly feedbackEvents: FeedbackEvents,
     private readonly realtime: RealtimeService,
     private readonly foodEvents: FoodEvents,
+    private readonly ds: DataSource,
   ) {}
 
   private botUsername: string | null = null;
@@ -258,6 +263,7 @@ export class BotUpdate implements OnModuleInit {
   onModuleInit() {
     this.startPollingWatchdog();
     void this.loadButtonIcons();
+    void this.loadBotLangs().catch((e) => this.logger.warn(`bot languages: ${(e as Error).message}`));
     void this.bot.telegram
       .getMe()
       .then((m) => (this.botUsername = m.username ?? null))
@@ -1205,9 +1211,54 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
       await ctx.reply('⚙️ Sozlamalar\n\n' + lines.join('\n'), settingsMenu());
       return;
     }
+
+    if (key === 'language') {
+      await ctx.reply(
+        'Tilni tanlang / Тилни танланг',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Lotin', 'lang:latn'), Markup.button.callback('Кирилл', 'lang:cyrl')],
+        ]),
+      );
+      return;
+    }
   }
 
   // --- promo code -----------------------------------------------------------
+
+  // --- language --------------------------------------------------------------
+
+  /** Keeps the choice across restarts and turns on conversion for these chats. */
+  private async loadBotLangs() {
+    installBotLang(this.bot);
+    rememberLabels([
+      ...Object.values(BTN),
+      ...(Object.keys(BTN) as BtnKey[]).map(plainLabel),
+      ...Object.keys(LEGACY_BTN),
+      DA_BACK,
+      DA_SKIP,
+      DA_YES,
+      DA_NO,
+    ]);
+    const rows = (await this.ds.query(`SELECT telegram_id, lang FROM telegram_langs WHERE lang = 'cyrl'`)) as {
+      telegram_id: string;
+    }[];
+    for (const r of rows) setBotLang(r.telegram_id, 'cyrl');
+  }
+
+  @Action(/lang:(latn|cyrl)/)
+  async onLanguage(@Ctx() ctx: Context) {
+    const lang = ((ctx as any).match?.[1] === 'cyrl' ? 'cyrl' : 'latn') as 'latn' | 'cyrl';
+    const id = ctx.from!.id;
+    await this.ds.query(
+      `INSERT INTO telegram_langs (telegram_id, lang) VALUES ($1, $2)
+       ON CONFLICT (telegram_id) DO UPDATE SET lang = EXCLUDED.lang, updated_at = now()`,
+      [id, lang],
+    );
+    setBotLang(id, lang);
+    await ctx.answerCbQuery().catch(() => undefined);
+    // A new keyboard replaces the old-language one.
+    await ctx.reply('✅ Til o‘zgartirildi', mainMenu());
+  }
 
   private async claimPromo(ctx: Context, code: string) {
     const from = ctx.from!;

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Cookies from 'js-cookie';
 import { Lock, User, Loader2, ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
+import { LangToggle } from '@/components/Lang';
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
@@ -130,6 +131,9 @@ export default function LoginPage() {
             {loading ? 'Kuting…' : 'Kirish'}
           </button>
           <p className="mt-6 text-center text-xs text-neutral-400">Koordinatorlar Telegram Mini App orqali ham kirishi mumkin</p>
+          <div className="mt-4 flex justify-center">
+            <LangToggle />
+          </div>
         </form>
       </section>
     </main>

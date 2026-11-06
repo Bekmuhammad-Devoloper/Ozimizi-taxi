@@ -29,6 +29,7 @@ import { Shell } from '@/components/Shell';
 import { StatsCard } from '@/components/StatsCard';
 import { LedgerCard } from '@/components/LedgerCard';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { QuickActions } from '@/components/QuickActions';
 import { api } from '@/lib/api';
 import { orderStatusLabel } from '@/lib/status';
 import { getAdminSocket } from '@/lib/socket';
@@ -117,6 +118,7 @@ export default function DashboardPage() {
       }
     >
       <InstallPrompt />
+      <QuickActions />
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 sm:gap-4 mb-6">
         <StatsCard
           title="Xazina"

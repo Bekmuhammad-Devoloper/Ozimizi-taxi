@@ -101,6 +101,17 @@ export class Order {
   @Column({ name: 'server_km', type: 'numeric', precision: 10, scale: 3, default: 0 })
   serverKm: string;
 
+  // Part of serverKm driven outside the admin's zone.
+  @Column({ name: 'server_outside_km', type: 'numeric', precision: 10, scale: 3, default: 0 })
+  serverOutsideKm: string;
+
+  // Settled at completion: km outside the zone and what they cost (part of `price`).
+  @Column({ name: 'outside_km', type: 'numeric', precision: 10, scale: 3, default: 0 })
+  outsideKm: string;
+
+  @Column({ name: 'outside_fee', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  outsideFee: string;
+
   @Index()
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;

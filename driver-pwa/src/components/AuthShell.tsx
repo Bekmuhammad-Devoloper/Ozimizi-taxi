@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { BrandHeader } from './BrandHeader';
+import { LangToggle } from './Lang';
 
 /**
  * Mobile-first auth layout.
@@ -18,6 +19,9 @@ export function AuthShell({
       <div className="w-full sm:max-w-md sm:rounded-3xl sm:border sm:border-line sm:overflow-hidden sm:shadow-xl sm:bg-paper">
         <div className="px-6 pb-8 flex flex-col min-h-[100dvh] sm:min-h-0">
           <BrandHeader subtitle={subtitle} />
+          <div className="flex justify-center mb-5">
+            <LangToggle />
+          </div>
           <div className="flex-1 flex flex-col">{children}</div>
         </div>
       </div>

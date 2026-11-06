@@ -1,4 +1,5 @@
 'use client';
+import { LangToggle } from '@/components/Lang';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Send, ArrowLeft, Loader2, ShieldCheck } from 'lucide-react';
@@ -132,6 +133,7 @@ export default function LoginPage() {
                   {loading ? <Loader2 size={18} className="animate-spin" /> : null}
                   {loading ? 'Yuborilmoqda…' : 'Kod olish'}
                 </button>
+                <div className="flex justify-center"><LangToggle /></div>
                 <a href={BOT} target="_blank" rel="noreferrer" className="block text-center text-sm text-neutral-500">
                   Hisobingiz yo‘qmi? <span className="font-semibold text-ink">@Moviytaxibot</span> da ro‘yxatdan o‘ting
                 </a>

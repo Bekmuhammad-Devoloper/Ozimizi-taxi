@@ -16,8 +16,8 @@ import { Shell } from '@/components/Shell';
 import { FareCard, TariffLine, WaitPanel } from '@/components/RideMeter';
 import { useOrderStore, OrderStatus } from '@/stores/order';
 import { api } from '@/lib/api';
-import { computeFare } from '@/lib/fare';
-import {
+import { computeZonedFare, zoneActive } from '@/lib/fare';
+import { fmtSum,
   isWaitCounting,
   liveWaitSec,
   noteServerTime,
@@ -53,6 +53,7 @@ function ActiveInner() {
   const setActive = useOrderStore((s) => s.setActive);
   const patchActive = useOrderStore((s) => s.patchActive);
   const trackedKm = useOrderStore((s) => s.trackedDistanceKm);
+  const trackedOutsideKm = useOrderStore((s) => s.trackedOutsideKm);
   const waitPending = useOrderStore((s) => s.waitPending);
   const setDriver = useAuthStore((s) => s.setDriver);
   const router = useRouter();
@@ -118,9 +119,10 @@ function ActiveInner() {
     setBusy(true);
     setErr(null);
     try {
-      const km = useOrderStore.getState().trackedDistanceKm;
+      const { trackedDistanceKm: km, trackedOutsideKm: outKm } = useOrderStore.getState();
       const { data } = await api.post(`/driver/orders/${id}/complete`, {
         distanceKm: Number(km.toFixed(3)),
+        outsideKm: Number(Math.min(outKm, 500).toFixed(3)),
       });
       patchActive(id, { ...orderFields(data), status: 'COMPLETED', waitStartedAt: null });
       api.get('/driver/me').then((r) => setDriver(r.data)).catch(() => {});
@@ -161,7 +163,7 @@ function ActiveInner() {
   // Live meter: waiting time + its cost, distance fare, total.
   const waitSec = liveWaitSec(active, now);
   const waitFee = waitFeeFor(waitSec, tariff);
-  const distanceFare = tariff ? computeFare(trackedKm, tariff) : 0;
+  const distanceFare = tariff ? computeZonedFare(trackedKm, trackedOutsideKm, tariff) : 0;
   const hasPickup =
     Number.isFinite(Number(active.pickupLat)) && Number.isFinite(Number(active.pickupLng));
   const hasDestination =
@@ -337,6 +339,11 @@ function ActiveInner() {
             <p className="relative mt-2 text-xs text-neutral-400">
               GPS orqali avtomatik kuzatilmoqda
             </p>
+            {tariff && zoneActive(tariff) && trackedOutsideKm > 0 && (
+              <p className="relative mt-1 text-xs font-semibold text-amber-300 tabular-nums">
+                Hududdan tashqari: {trackedOutsideKm.toFixed(2)} km · 1 km {fmtSum(tariff.outsidePricePerKm)} so‘m
+              </p>
+            )}
           </div>
 
           <WaitPanel
@@ -379,6 +386,12 @@ function ActiveInner() {
               <SummaryRow
                 label={`Kutish (${active.waitingMinutes ?? 0} daq)`}
                 value={`+${fmt(active.waitingFee ?? 0)} so‘m`}
+              />
+            )}
+            {Number(active.outsideFee ?? 0) > 0 && (
+              <SummaryRow
+                label={`Hududdan tashqari (${Number(active.outsideKm ?? 0).toFixed(1)} km)`}
+                value={`${fmt(active.outsideFee ?? 0)} so‘m`}
               />
             )}
             <SummaryRow label="Komissiya" value={`-${fmt(active.commission)} so‘m`} />

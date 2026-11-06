@@ -43,6 +43,8 @@ export class DriverService {
       waitingFreeMinutes: Number(t.waitingFreeMinutes ?? 0),
       waitingPricePerMinute: Number(t.waitingPricePerMinute ?? 0),
       roundTo: FARE_ROUND_TO,
+      zonePolygon: t.zonePolygon ?? [],
+      outsidePricePerKm: Number(t.outsidePricePerKm ?? 0),
     };
   }
 
@@ -149,7 +151,7 @@ export class DriverService {
   }
 
   complete(driverId: string, orderId: string, dto: CompleteOrderDto) {
-    return this.orderService.complete(driverId, orderId, dto.distanceKm);
+    return this.orderService.complete(driverId, orderId, dto.distanceKm, { outsideKm: dto.outsideKm });
   }
 
   cancel(driverId: string, orderId: string) {
@@ -474,7 +476,6 @@ export class DriverService {
       driver.carPlate = dto.carPlate.trim().toUpperCase();
     if (dto.avatarUrl !== undefined) driver.avatarUrl = dto.avatarUrl;
     if (dto.carPhotoUrl !== undefined) driver.carPhotoUrl = dto.carPhotoUrl;
-    if (dto.acceptDelivery !== undefined) driver.acceptDelivery = !!dto.acceptDelivery;
 
     return this.repo.save(driver);
   }

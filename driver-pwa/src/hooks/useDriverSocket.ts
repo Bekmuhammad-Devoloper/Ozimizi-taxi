@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { isOutsideZone } from '@/lib/meter';
 import { useOrderStore, IncomingOrder, OrderStatus } from '@/stores/order';
 import {
   DeliveryStatus,
@@ -458,7 +459,10 @@ export function useDriverSocket({ enabled }: Options) {
               longitude,
             );
             if (delta >= 0.01 && delta <= 1.5) {
-              addToDistance(delta);
+              addToDistance(
+                delta,
+                isOutsideZone((lastCounted.current.lat + latitude) / 2, (lastCounted.current.lng + longitude) / 2),
+              );
               lastCounted.current = { lat: latitude, lng: longitude };
             }
           } else {

@@ -1,4 +1,5 @@
 'use client';
+import { localize } from '@/lib/lang';
 
 /** Capacitor bridge (present only inside the Android app). */
 function cap(): any {
@@ -35,6 +36,8 @@ export async function setupNativeNotifications(): Promise<void> {
 export async function nativeNotify(title: string, body: string, id: number = Date.now() % 2147483647): Promise<boolean> {
   const ln = cap()?.Plugins?.LocalNotifications;
   if (!ln) return false;
+  title = localize(title);
+  body = localize(body);
   try {
     await ln.schedule({
       notifications: [{ id, title, body, channelId: CHANNEL, smallIcon: 'ic_stat_notify', iconColor: '#3b9bff', autoCancel: true }],

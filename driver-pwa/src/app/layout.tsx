@@ -1,3 +1,4 @@
+import { LangBridge } from '@/components/Lang';
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
@@ -39,7 +40,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="uz" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        <LangBridge />
+        {children}
+      </body>
     </html>
   );
 }

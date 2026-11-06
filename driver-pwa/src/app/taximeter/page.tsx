@@ -17,7 +17,7 @@ import {
 import { Shell } from '@/components/Shell';
 import { TariffLine, WaitPanel } from '@/components/RideMeter';
 import { api } from '@/lib/api';
-import { commissionFor, computeFare } from '@/lib/fare';
+import { commissionFor, computeZonedFare, zoneActive } from '@/lib/fare';
 import {
   fmtClock,
   fmtSum,
@@ -95,6 +95,7 @@ function TaximeterInner() {
   const patchActive = useOrderStore((s) => s.patchActive);
   const resetDistance = useOrderStore((s) => s.resetDistance);
   const trackedKm = useOrderStore((s) => s.trackedDistanceKm);
+  const trackedOutsideKm = useOrderStore((s) => s.trackedOutsideKm);
   const waitPending = useOrderStore((s) => s.waitPending);
   const gpsStatus = useOrderStore((s) => s.gpsStatus);
   const delivery = useDeliveryStore((s) => s.active);
@@ -170,9 +171,9 @@ function TaximeterInner() {
     const cur = useOrderStore.getState().active;
     if (busy || !cur || cur.source !== 'street' || cur.status !== 'IN_PROGRESS') return;
     const id = cur.id;
-    const km = useOrderStore.getState().trackedDistanceKm;
+    const { trackedDistanceKm: km, trackedOutsideKm: outKm } = useOrderStore.getState();
     const est = tariff
-      ? computeFare(km, tariff) + waitFeeFor(liveWaitSec(cur, serverNow()), tariff)
+      ? computeZonedFare(km, outKm, tariff) + waitFeeFor(liveWaitSec(cur, serverNow()), tariff)
       : null;
     const ok = confirm(
       `Safarni tugatasizmi?${est != null ? `\nNarx: ${fmtSum(est)} so‘m` : ''}\nMasofa: ${km.toFixed(2)} km`,
@@ -183,6 +184,7 @@ function TaximeterInner() {
     try {
       const { data } = await api.post(`/driver/orders/${id}/complete`, {
         distanceKm: Number(Math.min(km, 500).toFixed(3)),
+        outsideKm: Number(Math.min(outKm, 500).toFixed(3)),
       });
       patchActive(id, { ...orderFields(data), status: 'COMPLETED', waitStartedAt: null });
       api.get('/driver/me').then((r) => setDriver(r.data)).catch(() => {});
@@ -249,7 +251,7 @@ function TaximeterInner() {
   // Live meter (same formula as the server: distance fare + waiting fee).
   const waitSec = ride ? liveWaitSec(ride, now) : 0;
   const waitFee = waitFeeFor(waitSec, tariff);
-  const distanceFare = tariff ? computeFare(trackedKm, tariff) : 0;
+  const distanceFare = tariff ? computeZonedFare(trackedKm, trackedOutsideKm, tariff) : 0;
   const total = distanceFare + waitFee;
   const startedMs = ride?.startedAt
     ? new Date(ride.startedAt).getTime()
@@ -316,6 +318,11 @@ function TaximeterInner() {
             {tariff && (
               <p className="mt-2 text-xs text-neutral-400 tabular-nums">
                 Yo‘l {fmtSum(distanceFare)} + kutish {fmtSum(waitFee)}
+              </p>
+            )}
+            {tariff && zoneActive(tariff) && trackedOutsideKm > 0 && (
+              <p className="mt-1 text-xs font-semibold text-amber-300 tabular-nums">
+                Hududdan tashqari: {trackedOutsideKm.toFixed(2)} km · 1 km {fmtSum(tariff.outsidePricePerKm)} so‘m
               </p>
             )}
             <div className="mt-5 grid grid-cols-3 gap-2">

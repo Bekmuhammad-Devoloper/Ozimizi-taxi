@@ -81,6 +81,8 @@ export function orderForClient(o: Order, driver?: Driver | null) {
     waitingSeconds: Number((o as any).waitingSeconds ?? 0),
     waitRunning: o.status === OrderStatus.ARRIVED || !!(o as any).waitStartedAt,
     waitTickAt: (o as any).waitTickAt ?? null,
+    outsideKm: Number((o as any).outsideKm ?? 0),
+    outsideFee: Number((o as any).outsideFee ?? 0),
     cancelPenalty: o.cancelPenalty,
     receiptNo: o.receiptNo,
     createdAt: o.createdAt,
@@ -154,6 +156,8 @@ export class ClientApiController {
       waitingFreeMinutes: Number(t.waitingFreeMinutes ?? 0),
       waitingPricePerMinute: Number(t.waitingPricePerMinute ?? 0),
       tiers: (t as any).tiers ?? null,
+      zonePolygon: t.zonePolygon ?? [],
+      outsidePricePerKm: Number(t.outsidePricePerKm ?? 0),
     };
   }
 

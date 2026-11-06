@@ -2,9 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useOrderStore, type OrderModel } from '@/stores/order';
-import { liveWaitSec, noteServerTime, serverNow, type DriverTariff } from '@/lib/meter';
-
-const TARIFF_KEY = 'moviy-driver-tariff';
+import { TARIFF_KEY, liveWaitSec, noteServerTime, serverNow, type DriverTariff } from '@/lib/meter';
 
 function readCachedTariff(): DriverTariff | null {
   try {
@@ -71,6 +69,8 @@ export function orderFields(d: any): Partial<OrderModel> {
     'startedAt',
     'waitingMinutes',
     'waitingFee',
+    'outsideKm',
+    'outsideFee',
     'waitingSeconds',
     'waitStartedAt',
     'waitTickAt',

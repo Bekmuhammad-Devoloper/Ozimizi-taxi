@@ -93,7 +93,9 @@ export function describeEvent(e: OrderEventRow): { icon: string; title: string; 
       return {
         icon: '🏁',
         title: `Yakunlandi: ${who}`,
-        detail: `${Number(d.price ?? 0).toLocaleString('uz')} so‘m · ${Number(d.km ?? 0).toFixed(1)} km${d.byAdmin ? ' · admin yakunladi' : ''}`,
+        detail: `${Number(d.price ?? 0).toLocaleString('uz')} so‘m · ${Number(d.km ?? 0).toFixed(1)} km${
+          d.outsideKm ? ` (hududdan tashqari ${Number(d.outsideKm).toFixed(1)} km)` : ''
+        }${d.byAdmin ? ' · admin yakunladi' : ''}`,
         tone: 'good',
       };
     case 'cancelled': {

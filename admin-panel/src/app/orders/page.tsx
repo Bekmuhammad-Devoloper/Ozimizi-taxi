@@ -29,6 +29,8 @@ interface OrderRow {
   waitingMinutes?: number;
   waitingFee?: string | null;
   waitingSeconds?: number;
+  outsideKm?: string | number | null;
+  outsideFee?: string | number | null;
   waitStartedAt?: string | null;
   waitTickAt?: string | null;
   cancelPenalty?: string | null;
@@ -536,6 +538,8 @@ function MoneyLines({ o }: { o: OrderRow }) {
   if (Number(o.discount ?? 0) > 0) rows.push(['Promo chegirma', Number(o.discount).toLocaleString('uz') + " so'm"]);
   if (o.waitingMinutes || Number(o.waitingFee ?? 0) > 0)
     rows.push(['Kutish', `${o.waitingMinutes ?? 0} daq · ${Number(o.waitingFee ?? 0).toLocaleString('uz')} so'm`]);
+  if (Number(o.outsideFee ?? 0) > 0)
+    rows.push(['Hududdan tashqari', `${Number(o.outsideKm ?? 0).toFixed(1)} km · ${Number(o.outsideFee).toLocaleString('uz')} so'm`]);
   if (Number(o.cancelPenalty ?? 0) > 0) rows.push(['Jarima (bonusdan)', Number(o.cancelPenalty).toLocaleString('uz') + " so'm", 'text-red-600']);
   return (
     <div className="pt-1 space-y-1">

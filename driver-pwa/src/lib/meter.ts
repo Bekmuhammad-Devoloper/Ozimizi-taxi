@@ -2,7 +2,20 @@
 // waiting clock, its fee and the running fare — the same formulas the server
 // uses when it completes the ride (order.service complete()).
 import type { OrderModel } from '@/stores/order';
-import { computeFare, type FareTariff } from '@/lib/fare';
+import { computeFare, insidePolygon, zoneActive, type FareTariff } from '@/lib/fare';
+
+export const TARIFF_KEY = 'moviy-driver-tariff';
+
+/** Is this point outside the admin's zone? (the tariff cached by useTariff) */
+export function isOutsideZone(lat: number, lng: number): boolean {
+  try {
+    const raw = localStorage.getItem(TARIFF_KEY);
+    const t = raw ? (JSON.parse(raw) as DriverTariff) : null;
+    return !!t && zoneActive(t) && !insidePolygon(lat, lng, t.zonePolygon!);
+  } catch {
+    return false;
+  }
+}
 
 /** GET /driver/tariff */
 export interface DriverTariff extends FareTariff {

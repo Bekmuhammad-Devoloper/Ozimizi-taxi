@@ -40,6 +40,10 @@ export class TariffService {
         .sort((a, b) => a.uptoKm - b.uptoKm)
         .filter((t) => (seen.has(t.uptoKm) ? false : (seen.add(t.uptoKm), true)));
     }
+    if (dto.zonePolygon !== undefined) {
+      row.zonePolygon = dto.zonePolygon.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+    }
+    if (dto.outsidePricePerKm !== undefined) row.outsidePricePerKm = String(dto.outsidePricePerKm);
     return this.repo.save(row);
   }
 }

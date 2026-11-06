@@ -24,6 +24,8 @@ export interface ReceiptData {
   waitingMinutes: number;
   waitingFee: number;
   fare: number; // price without waiting fee
+  outsideKm: number;
+  outsideFee: number;
   price: number; // total fare
   discount: number;
   bonusUsed: number;
@@ -96,6 +98,8 @@ export class ReceiptService {
       waitingMinutes: Number(o.waitingMinutes ?? 0),
       waitingFee,
       fare: Math.max(0, price - waitingFee),
+      outsideKm: Number((o as any).outsideKm ?? 0),
+      outsideFee: Number((o as any).outsideFee ?? 0),
       price,
       discount,
       bonusUsed,
@@ -127,6 +131,9 @@ export class ReceiptService {
     ];
     if (data.durationMin != null) rows.push(['Davomiylik', `${data.durationMin} daqiqa`]);
     rows.push('line', ['Yo‘l haqi', `${money(data.fare)} so‘m`]);
+    if (data.outsideFee > 0) {
+      rows.push([`Shu jumladan hududdan tashqari (${data.outsideKm.toFixed(1)} km)`, `${money(data.outsideFee)} so‘m`]);
+    }
     if (data.waitingMinutes > 0 || data.waitingFee > 0) {
       rows.push([`Kutish (${data.waitingMinutes} daq)`, `${money(data.waitingFee)} so‘m`]);
     }

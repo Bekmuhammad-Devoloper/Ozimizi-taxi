@@ -25,6 +25,8 @@ export interface OrderModel {
   startedAt?: string | null;
   waitingMinutes?: number;
   waitingFee?: string | null;
+  outsideKm?: string | number | null;
+  outsideFee?: string | number | null;
   waitingSeconds?: number;
   waitStartedAt?: string | null;
   // Waiting meter: last server tick and whether the car was moving then.
@@ -89,6 +91,8 @@ interface OrderState {
   setGpsStatus: (s: GpsStatus) => void;
   history: OrderModel[];
   trackedDistanceKm: number;
+  /** Part of trackedDistanceKm driven outside the admin's zone. */
+  trackedOutsideKm: number;
   setActive: (o: OrderModel | null) => void;
   /**
    * Merge fields into the CURRENT active order (read at call time, never a
@@ -104,7 +108,7 @@ interface OrderState {
   setIncoming: (o: IncomingOrder | null) => void;
   setBonusRequest: (r: BonusRequest | null) => void;
   setHistory: (o: OrderModel[]) => void;
-  addToDistance: (km: number) => void;
+  addToDistance: (km: number, outside?: boolean) => void;
   resetDistance: () => void;
 }
 
@@ -121,6 +125,7 @@ export const useOrderStore = create<OrderState>()(
       setGpsStatus: (gpsStatus) => set({ gpsStatus }),
       history: [],
       trackedDistanceKm: 0,
+      trackedOutsideKm: 0,
       setActive: (active) => set({ active }),
       patchActive: (id, patch) =>
         set((s) => {
@@ -134,9 +139,12 @@ export const useOrderStore = create<OrderState>()(
       setIncoming: (incoming) => set({ incoming }),
       setBonusRequest: (bonusRequest) => set({ bonusRequest }),
       setHistory: (history) => set({ history }),
-      addToDistance: (km) =>
-        set((s) => ({ trackedDistanceKm: s.trackedDistanceKm + km })),
-      resetDistance: () => set({ trackedDistanceKm: 0 }),
+      addToDistance: (km, outside = false) =>
+        set((s) => ({
+          trackedDistanceKm: s.trackedDistanceKm + km,
+          trackedOutsideKm: s.trackedOutsideKm + (outside ? km : 0),
+        })),
+      resetDistance: () => set({ trackedDistanceKm: 0, trackedOutsideKm: 0 }),
     }),
     {
       name: 'taxi-driver-order',
@@ -144,6 +152,7 @@ export const useOrderStore = create<OrderState>()(
       partialize: (s) => ({
         active: s.active,
         trackedDistanceKm: s.trackedDistanceKm,
+        trackedOutsideKm: s.trackedOutsideKm,
       }),
     },
   ),

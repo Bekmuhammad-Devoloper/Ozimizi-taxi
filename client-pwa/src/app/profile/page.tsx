@@ -1,4 +1,5 @@
 'use client';
+import { LangToggle } from '@/components/Lang';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Phone, LogOut, Save, Send, Smartphone, ChevronRight, Loader2 } from 'lucide-react';
@@ -114,6 +115,11 @@ function ProfileInner() {
           </span>
           <ChevronRight size={18} className="text-neutral-300" />
         </a>
+
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm font-semibold">Til</span>
+          <LangToggle />
+        </div>
 
         <button onClick={out} className="w-full h-12 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition">
           <LogOut size={18} /> Chiqish

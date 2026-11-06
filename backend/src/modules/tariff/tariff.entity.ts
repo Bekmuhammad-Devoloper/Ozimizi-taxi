@@ -66,6 +66,20 @@ export class Tariff {
   @Column({ type: 'jsonb', default: () => "'[]'" })
   tiers: TariffTier[];
 
+  // Zone drawn by the admin (polygon points). Km driven outside it cost
+  // `outsidePricePerKm`; fewer than 3 points or price 0 = no zone pricing.
+  @Column({ name: 'zone_polygon', type: 'jsonb', default: () => "'[]'" })
+  zonePolygon: { lat: number; lng: number }[];
+
+  @Column({
+    name: 'outside_price_per_km',
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    default: 0,
+  })
+  outsidePricePerKm: string;
+
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }

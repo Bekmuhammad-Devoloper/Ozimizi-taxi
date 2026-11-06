@@ -19,6 +19,8 @@ interface Receipt {
   waitingMinutes: number;
   waitingFee: number;
   fare: number;
+  outsideKm?: number;
+  outsideFee?: number;
   price: number;
   discount: number;
   bonusUsed: number;
@@ -81,6 +83,12 @@ export default function ReceiptPage() {
               <Row k="Masofa" v={`${r.distanceKm.toFixed(1)} km`} />
               {r.durationMin != null && <Row k="Davomiylik" v={`${r.durationMin} daqiqa`} />}
               <Row k="Yo‘l haqi" v={`${money(r.fare)} so‘m`} />
+              {Number(r.outsideFee ?? 0) > 0 && (
+                <Row
+                  k={`Shu jumladan hududdan tashqari (${Number(r.outsideKm ?? 0).toFixed(1)} km)`}
+                  v={`${money(r.outsideFee ?? 0)} so‘m`}
+                />
+              )}
               {(r.waitingMinutes > 0 || r.waitingFee > 0) && (
                 <Row k={`Kutish (${r.waitingMinutes} daq)`} v={`${money(r.waitingFee)} so‘m`} />
               )}

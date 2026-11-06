@@ -510,6 +510,12 @@ function Completed({ order, cashDue, onRefresh }: { order: ClientOrder; cashDue:
             <Row k="Masofa" v={`${Number(order.distanceKm ?? 0).toFixed(1)} km`} />
             {duration != null && <Row k="Davomiylik" v={`${duration} daqiqa`} />}
             {(order.waitingMinutes ?? 0) > 0 && <Row k={`Kutish (${order.waitingMinutes} daq)`} v={`${money(order.waitingFee)} so‘m`} />}
+            {Number((order as any).outsideFee ?? 0) > 0 && (
+              <Row
+                k={`Hududdan tashqari (${Number((order as any).outsideKm ?? 0).toFixed(1)} km)`}
+                v={`${money((order as any).outsideFee)} so‘m`}
+              />
+            )}
             <Row k="Narx" v={`${money(order.price)} so‘m`} />
             {Number(order.discount ?? 0) > 0 && <Row k="Promo chegirma" v={`− ${money(order.discount)} so‘m`} />}
             {Number(order.bonusUsed ?? 0) > 0 && <Row k="Bonusdan to‘landi" v={`− ${money(order.bonusUsed)} so‘m`} />}

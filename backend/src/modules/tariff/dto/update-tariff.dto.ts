@@ -20,6 +20,18 @@ export class TariffTierDto {
   price: number;
 }
 
+export class ZonePointDto {
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng: number;
+}
+
 export class UpdateTariffDto {
   @IsOptional()
   @IsNumber()
@@ -59,4 +71,16 @@ export class UpdateTariffDto {
   @ValidateNested({ each: true })
   @Type(() => TariffTierDto)
   tiers?: TariffTierDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => ZonePointDto)
+  zonePolygon?: ZonePointDto[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  outsidePricePerKm?: number;
 }

@@ -1,3 +1,4 @@
+import { LangBridge } from '@/components/Lang';
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
@@ -40,7 +41,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: TG_CAPTURE_SCRIPT }} />
         <script src="https://telegram.org/js/telegram-web-app.js" async />
       </head>
-      <body>{children}</body>
+      <body>
+        <LangBridge />
+        {children}
+      </body>
     </html>
   );
 }

@@ -36,29 +36,19 @@ import { som, type KitchenWallet } from '@/lib/food';
 import { getAdminSocket } from '@/lib/socket';
 import { cn } from '@/lib/cn';
 import { useUiStore } from '@/stores/ui';
+import { LangToggle } from './Lang';
 
-const adminItems = [
+// Compact menu: the other pages of a section are tabs (see SectionTabs).
+const adminItems: { href: string; label: string; icon: any; also?: string[] }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/orders', label: 'Buyurtmalar', icon: ListOrdered },
-  { href: '/food-orders', label: 'Ovqat buyurtmalari', icon: UtensilsCrossed },
+  { href: '/orders', label: 'Buyurtmalar', icon: ListOrdered, also: ['/food-orders'] },
   { href: '/kitchens', label: 'Oshxonalar', icon: ChefHat },
-  { href: '/drivers', label: 'Haydovchilar', icon: Car },
-  { href: '/driver-versions', label: 'Ilova versiyalari', icon: Smartphone },
+  { href: '/drivers', label: 'Haydovchilar', icon: Car, also: ['/driver-applications', '/driver-versions'] },
   { href: '/clients', label: 'Klientlar', icon: Users },
-  { href: '/payment-requests', label: 'To‘lov so‘rovlari', icon: Inbox },
-  {
-    href: '/driver-applications',
-    label: 'Haydovchi bo‘lmoqchilar',
-    icon: UserPlus,
-  },
-  { href: '/feedback', label: 'Murojaatlar', icon: MessageSquare },
-  { href: '/announcements', label: 'Xabarnoma', icon: Megaphone },
-  { href: '/promo-codes', label: 'Promo kodlar', icon: Ticket },
-  { href: '/referrals', label: 'Referral linklar', icon: Link2 },
-  { href: '/coordinators', label: 'Koordinatorlar', icon: ShieldCheck },
-  { href: '/tariff', label: 'Tariflar', icon: Receipt },
-  { href: '/settings', label: 'Sozlamalar', icon: Settings },
-  { href: '/password', label: 'Parolni o‘zgartirish', icon: KeyRound },
+  { href: '/feedback', label: 'Xabarlar', icon: MessageSquare, also: ['/announcements'] },
+  { href: '/payment-requests', label: 'Moliya', icon: Inbox, also: ['/coordinators'] },
+  { href: '/promo-codes', label: 'Marketing', icon: Ticket, also: ['/referrals'] },
+  { href: '/settings', label: 'Sozlamalar', icon: Settings, also: ['/tariff', '/password'] },
 ];
 
 const coordinatorItems = [
@@ -78,7 +68,7 @@ const kitchenItems = [
 
 type Role = 'admin' | 'coordinator' | 'kitchen';
 
-function decodeRole(token: string | undefined): Role | null {
+export function decodeRole(token: string | undefined): Role | null {
   if (!token) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -105,7 +95,7 @@ export function Sidebar() {
   const open = useUiStore((s) => s.sidebarOpen);
   const setOpen = useUiStore((s) => s.setSidebarOpen);
   const role = decodeRole(Cookies.get('admin_token'));
-  const items =
+  const items: { href: string; label: string; icon: any; also?: string[] }[] =
     role === 'coordinator' ? coordinatorItems : role === 'kitchen' ? kitchenItems : adminItems;
 
   const { data: applicationsUnread } = useQuery({
@@ -284,19 +274,19 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {items.map(({ href, label, icon: Icon }) => {
+          {items.map(({ href, label, icon: Icon, also }) => {
             // '/kitchen' must not light up on '/kitchen/menu', nor
             // '/coordinator' on '/coordinators'.
             const active =
               href === '/kitchen'
                 ? pathname === href
-                : pathname === href || pathname.startsWith(href + '/');
+                : [href, ...(also ?? [])].some((h) => pathname === h || pathname.startsWith(h + '/'));
             return (
               <Link
                 key={href}
                 href={href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   active
                     ? 'bg-gold text-ink'
                     : 'text-neutral-300 hover:bg-neutral-800',
@@ -304,7 +294,7 @@ export function Sidebar() {
               >
                 <Icon className="w-5 h-5" strokeWidth={1.75} />
                 <span className="flex-1">{label}</span>
-                {href === '/driver-applications' && !!applicationsUnread && (
+                {href === '/drivers' && !!applicationsUnread && (
                   <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                     {applicationsUnread}
                   </span>
@@ -314,7 +304,7 @@ export function Sidebar() {
                     {feedbackUnread}
                   </span>
                 )}
-                {href === '/food-orders' && foodActive > 0 && (
+                {href === '/orders' && foodActive > 0 && (
                   <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                     {foodActive}
                   </span>
@@ -334,9 +324,12 @@ export function Sidebar() {
           })}
         </nav>
 
+        <div className="px-3 pt-2 flex justify-center">
+          <LangToggle dark />
+        </div>
         <button
           onClick={logout}
-          className="m-3 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+          className="m-3 mt-2 flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800"
         >
           <LogOut className="w-5 h-5" strokeWidth={1.75} /> Chiqish
         </button>

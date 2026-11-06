@@ -1,3 +1,4 @@
+import { localize } from '@/lib/lang';
 // Bridge to the Android app (Capacitor wrapper in driver-android/). The
 // same web app runs in a normal browser (PWA) and inside the APK; here we
 // detect the native shell and reach its plugins through the injected
@@ -81,6 +82,8 @@ export async function nativeNotify(
 ): Promise<boolean> {
   const ln = cap()?.Plugins?.LocalNotifications;
   if (!ln) return false;
+  title = localize(title);
+  body = localize(body);
   try {
     await ln.schedule({
       notifications: [

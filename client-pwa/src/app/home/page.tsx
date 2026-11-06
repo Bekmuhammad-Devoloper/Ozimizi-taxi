@@ -9,7 +9,7 @@ import { DestinationSheet } from '@/components/DestinationSheet';
 import { api, errMsg } from '@/lib/api';
 import { getPosition } from '@/lib/native';
 import { reverseGeocode, routeBetween, rememberPlace, Place, RouteInfo } from '@/lib/geocode';
-import { computeFare } from '@/lib/fare';
+import { computeZonedFare, outsideShare, type ZonePoint } from '@/lib/fare';
 import { money, STATUS_LABEL } from '@/lib/status';
 import { useAuthStore } from '@/stores/auth';
 import { useOrderStore, isActiveStatus, ClientOrder } from '@/stores/order';
@@ -25,6 +25,8 @@ interface Tariff {
   pricePerKm: number;
   minimumFare: number;
   tiers?: { uptoKm: number; price: number }[] | null;
+  zonePolygon?: ZonePoint[] | null;
+  outsidePricePerKm?: number | null;
 }
 
 export default function HomePage() {
@@ -134,7 +136,11 @@ function HomeInner() {
     };
   }, [dest, pickup.lat, pickup.lng, pickup]);
 
-  const price = route && tariff ? computeFare(route.distanceKm, { ...tariff, commissionPerOrder: 0 }) : null;
+  const fareTariff = tariff ? { ...tariff, commissionPerOrder: 0 } : null;
+  const price =
+    route && fareTariff
+      ? computeZonedFare(route.distanceKm, route.distanceKm * outsideShare(route.coords, fareTariff), fareTariff)
+      : null;
 
   const pickPlace = (p: Place) => {
     rememberPlace(p);

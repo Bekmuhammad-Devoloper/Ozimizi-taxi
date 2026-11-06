@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 // Side effect: start listening for Chrome's install prompt on every page.
 import '@/lib/installPrompt';
+import { LangBridge } from './Lang';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [qc] = useState(
@@ -16,5 +17,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }),
   );
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={qc}>
+      <LangBridge />
+      {children}
+    </QueryClientProvider>
+  );
 }

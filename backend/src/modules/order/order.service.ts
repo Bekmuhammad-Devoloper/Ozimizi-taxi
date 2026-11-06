@@ -15,7 +15,7 @@ import { BalanceService } from '../balance/balance.service';
 import { BalanceTxType } from '../balance/balance-transaction.entity';
 import { RealtimeService } from '../realtime/realtime.service';
 import { haversineKm } from '../../common/utils/haversine';
-import { computeFare } from '../../common/utils/fare';
+import { computeFare, computeZonedFare, insidePolygon, outsideShare, zoneActive } from '../../common/utils/fare';
 import { reverseGeocode } from '../../common/utils/geocode';
 import { OrderEvents } from './order.events';
 import { Client } from '../client/client.entity';
@@ -404,7 +404,14 @@ export class OrderService {
           haversineKm(order.pickupLat, order.pickupLng, order.destinationLat, order.destinationLng) * 1.3 * 10,
         ) / 10;
       const t = await this.tariff.getCurrent();
-      estimate = { km: ekm, price: computeFare(ekm, t) };
+      const share = outsideShare(
+        [
+          { lat: order.pickupLat, lng: order.pickupLng },
+          { lat: order.destinationLat, lng: order.destinationLng },
+        ],
+        t,
+      );
+      estimate = { km: ekm, price: computeZonedFare(ekm, ekm * share, t) };
     }
     return {
       orderId: order.id,
@@ -650,7 +657,7 @@ export class OrderService {
     driverId: string,
     orderId: string,
     distanceKm: number,
-    opts: { allowAnyStatus?: boolean } = {},
+    opts: { allowAnyStatus?: boolean; outsideKm?: number } = {},
   ): Promise<Order> {
     const order = await this.orders.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');
@@ -686,7 +693,14 @@ export class OrderService {
       order.destinationLat = drv.currentLat;
       order.destinationLng = drv.currentLng;
     }
-    const price = computeFare(km, tariff) + Math.round(Number(order.waitingFee ?? 0));
+    // Km outside the admin's zone: the larger of the phone's and the server's count.
+    const outsideKm = zoneActive(tariff)
+      ? Math.min(km, Math.max(Number(opts.outsideKm) || 0, Number(order.serverOutsideKm ?? 0)))
+      : 0;
+    const distanceFare = computeZonedFare(km, outsideKm, tariff);
+    order.outsideKm = outsideKm.toFixed(3);
+    order.outsideFee = (outsideKm > 0 ? distanceFare - computeFare(km - outsideKm, tariff) : 0).toFixed(2);
+    const price = distanceFare + Math.round(Number(order.waitingFee ?? 0));
 
     // Percentage commission when configured, else the fixed per-order fee.
     const pct = Number(tariff.commissionPercent ?? 0);
@@ -767,6 +781,7 @@ export class OrderService {
       ...this.driverLabel(driver),
       price: Number(saved.price ?? 0),
       km: Number(saved.distanceKm ?? 0),
+      outsideKm: Number(saved.outsideKm ?? 0),
       waitingFee: Number((saved as any).waitingFee ?? 0),
       byAdmin: !!opts.allowAnyStatus,
     });
@@ -943,17 +958,34 @@ export class OrderService {
       prev?.currentLat != null && prev.currentLng != null
         ? haversineKm(prev.currentLat, prev.currentLng, lat, lng)
         : 0;
-    if (delta >= 0.005 && delta <= 1.5) await this.addServerKm(driverId, delta);
+    if (delta >= 0.005 && delta <= 1.5) {
+      const outside = await this.isOutsideZone((prev!.currentLat! + lat) / 2, (prev!.currentLng! + lng) / 2);
+      await this.addServerKm(driverId, delta, outside);
+    }
     await this.onWaitPing(driverId, delta <= 1.5 ? delta : 0).catch(() => undefined);
     await this.pushDriverPosition(driverId, lat, lng).catch(() => undefined);
   }
 
-  async addServerKm(driverId: string, km: number): Promise<void> {
+  // Location pings are frequent; the zone changes rarely.
+  private zoneCache: { at: number; tariff: Awaited<ReturnType<TariffService['getCurrent']>> } | null = null;
+
+  private async isOutsideZone(lat: number, lng: number): Promise<boolean> {
+    if (!this.zoneCache || Date.now() - this.zoneCache.at > 30_000) {
+      this.zoneCache = { at: Date.now(), tariff: await this.tariff.getCurrent() };
+    }
+    const t = this.zoneCache.tariff;
+    return zoneActive(t) && !insidePolygon(lat, lng, t.zonePolygon);
+  }
+
+  async addServerKm(driverId: string, km: number, outside = false): Promise<void> {
     if (!(km > 0)) return;
     await this.orders
       .createQueryBuilder()
       .update(Order)
-      .set({ serverKm: () => `server_km + ${km.toFixed(3)}` })
+      .set({
+        serverKm: () => `server_km + ${km.toFixed(3)}`,
+        ...(outside ? { serverOutsideKm: () => `server_outside_km + ${km.toFixed(3)}` } : {}),
+      })
       .where('driver_id = :driverId AND status = :status', {
         driverId,
         status: OrderStatus.IN_PROGRESS,
@@ -1010,6 +1042,7 @@ export class OrderService {
         waitStartedAt: null,
         waitTickAt: null,
         serverKm: '0',
+        serverOutsideKm: '0',
       } as any)
       .where('id = :id AND driver_id = :driverId AND status = :status', {
         id: order.id,

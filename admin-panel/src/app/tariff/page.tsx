@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Route, AlertCircle, Percent, CheckCircle2, Layers, Plus, Trash2, Clock } from 'lucide-react';
+import { Save, Route, AlertCircle, Percent, CheckCircle2, Layers, Plus, Trash2, Clock, Map as MapIcon } from 'lucide-react';
+import { ZoneEditor, type ZonePoint } from '@/components/ZoneEditor';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 
@@ -21,6 +22,9 @@ export default function TariffPage() {
   const [tiers, setTiers] = useState<{ uptoKm: string; price: string }[]>([]);
   const [waitingFree, setWaitingFree] = useState('');
   const [waitingPrice, setWaitingPrice] = useState('');
+  // Zone: km driven outside the drawn area cost the outside price.
+  const [zone, setZone] = useState<ZonePoint[]>([]);
+  const [outsidePrice, setOutsidePrice] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
 
   useEffect(() => {
@@ -31,6 +35,8 @@ export default function TariffPage() {
     setCommissionPercent(String(Number(data.commissionPercent ?? 0)));
     setWaitingFree(String(Number(data.waitingFreeMinutes ?? 0)));
     setWaitingPrice(String(Number(data.waitingPricePerMinute ?? 0)));
+    setZone(Array.isArray(data.zonePolygon) ? data.zonePolygon : []);
+    setOutsidePrice(String(Number(data.outsidePricePerKm ?? 0)));
     setTiers(
       (data.tiers ?? []).map((t: { uptoKm: number; price: number }) => ({
         uptoKm: String(t.uptoKm),
@@ -49,6 +55,8 @@ export default function TariffPage() {
           commissionPercent: Number(commissionPercent || 0),
           waitingFreeMinutes: Number(waitingFree || 0),
           waitingPricePerMinute: Number(waitingPrice || 0),
+          zonePolygon: zone,
+          outsidePricePerKm: Number(outsidePrice || 0),
           tiers: tiers
             .map((t) => ({ uptoKm: Number(t.uptoKm), price: Number(t.price) }))
             .filter((t) => t.uptoKm > 0 && t.price >= 0),
@@ -249,6 +257,29 @@ export default function TariffPage() {
                 <Plus size={16} /> Pog‘ona qo‘shish
               </button>
             </div>
+          </div>
+
+          <div className="pt-3 border-t border-line space-y-3">
+            <p className="label flex items-center gap-1.5">
+              <MapIcon size={15} /> Hududdan tashqari narx
+            </p>
+            <p className="text-xs text-neutral-500">
+              Xaritani bosib tuman yoki hudud chegarasini chizing. Mashina shu hududdan tashqariga chiqsa, tashqaridagi
+              har km quyidagi narxda hisoblanadi; ichkariga qaytsa, yana oddiy tarif davom etadi. 3 tadan kam nuqta yoki
+              narx 0 bo‘lsa, bu qoida ishlamaydi.
+            </p>
+            <ZoneEditor points={zone} onChange={setZone} />
+            <Field icon={<Route size={16} />} label="Hududdan tashqari 1 km narxi">
+              <NumberInput value={outsidePrice} onChange={setOutsidePrice} suffix="so'm" />
+            </Field>
+            {zone.length >= 3 && Number(outsidePrice) > 0 && (
+              <p className="text-[11px] text-neutral-500">
+                Misol: 5 km hudud ichida + 4 km tashqarida = {fmtN(computeFare(5, fareTariff))} + 4 × {fmtN(Number(outsidePrice))} ={' '}
+                <b className="text-ink">
+                  {fmtN(computeFare(5, fareTariff) + Math.round((4 * Number(outsidePrice)) / 1000) * 1000)} so‘m
+                </b>
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-3 border-t border-line">

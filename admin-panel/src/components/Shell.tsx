@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react';
 import Image from 'next/image';
 import { Sidebar } from './Sidebar';
 import { OrderEventFeed } from './OrderEventFeed';
+import { SectionTabs } from './SectionTabs';
 import { useUiStore } from '@/stores/ui';
 
 export function Shell({
@@ -78,6 +79,7 @@ export function Shell({
           </div>
         )}
 
+        <SectionTabs />
         <div className="p-4 lg:p-8">{children}</div>
       </main>
       <OrderEventFeed />

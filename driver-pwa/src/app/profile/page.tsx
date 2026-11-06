@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { IOSSwitch } from '@/components/IOSSwitch';
+import { LangToggle } from '@/components/Lang';
 import { useAuthStore } from '@/stores/auth';
 import { useDeliveryStore } from '@/stores/delivery';
 import { disconnectSocket } from '@/lib/socket';
@@ -53,8 +54,6 @@ function Inner() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [txs, setTxs] = useState<BalanceTx[]>([]);
-  const [deliveryBusy, setDeliveryBusy] = useState(false);
-  const [deliveryErr, setDeliveryErr] = useState<string | null>(null);
   // Couriers (foot / bike / moto) need only a photo — no car fields.
   const isCourier = driver?.kind === 'courier';
   const avatarInput = useRef<HTMLInputElement>(null);
@@ -146,22 +145,6 @@ function Inner() {
       setErr(e?.response?.data?.message ?? e?.message ?? 'Xato');
     } finally {
       setSaving(false);
-    }
-  };
-
-  // Taxi drivers: also take food deliveries.
-  const toggleAcceptDelivery = async () => {
-    if (deliveryBusy) return;
-    const next = !driver?.acceptDelivery;
-    setDeliveryBusy(true);
-    setDeliveryErr(null);
-    try {
-      const { data } = await api.patch('/driver/profile', { acceptDelivery: next });
-      setDriver({ acceptDelivery: data?.acceptDelivery ?? next });
-    } catch (e: any) {
-      setDeliveryErr(e?.response?.data?.message ?? 'Saqlab bo‘lmadi');
-    } finally {
-      setDeliveryBusy(false);
     }
   };
 
@@ -268,29 +251,21 @@ function Inner() {
               <ChevronRight size={14} className="text-neutral-400" />
             </Link>
           </li>
-          {!isCourier && (
-            <li className="flex items-center gap-3 px-4 py-3">
-              <span className="text-neutral-400">
-                <UtensilsCrossed size={16} />
+          <li className="flex items-center gap-3 px-4 py-3">
+            <span className="text-neutral-400">
+              <UtensilsCrossed size={16} />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium">Ish turi</span>
+              <span className="block text-[11px] text-neutral-500 leading-snug">
+                Administrator belgilaydi
               </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-medium">
-                  Yetkazish buyurtmalarini olish
-                </span>
-                <span className="block text-[11px] text-neutral-500 leading-snug">
-                  Oshxonadan mijozga ovqat yetkazib, haq olasiz
-                </span>
-              </span>
-              <IOSSwitch
-                size="sm"
-                checked={!!driver?.acceptDelivery}
-                onChange={toggleAcceptDelivery}
-                disabled={deliveryBusy}
-              />
-            </li>
-          )}
+            </span>
+            <span className="text-sm font-semibold text-right">
+              {isCourier ? 'Kuryer' : driver?.acceptDelivery ? 'Taksi + kuryer' : 'Taksi'}
+            </span>
+          </li>
         </ul>
-        {deliveryErr && <p className="mt-2 ml-1 text-sm text-red-600">{deliveryErr}</p>}
         {isCourier && err && <p className="mt-2 ml-1 text-sm text-red-600">{err}</p>}
       </section>
 
@@ -403,8 +378,12 @@ function Inner() {
         </div>
       </section>
 
-      {/* LOGOUT */}
+      {/* LANGUAGE + LOGOUT */}
       <section className="px-6 mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium">Til</span>
+          <LangToggle />
+        </div>
         <button
           onClick={onLogout}
           className="w-full h-12 flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 text-red-700 text-sm font-semibold active:scale-[0.98]"
