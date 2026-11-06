@@ -324,15 +324,15 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="px-3 pt-2 flex justify-center">
-          <LangToggle dark />
+        <div className="border-t border-neutral-800 p-3 flex items-center justify-between gap-2">
+          <button
+            onClick={logout}
+            className="flex items-center gap-2.5 h-9 px-3 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+          >
+            <LogOut className="w-[18px] h-[18px]" strokeWidth={1.75} /> Chiqish
+          </button>
+          <LangToggle dark size="sm" />
         </div>
-        <button
-          onClick={logout}
-          className="m-3 mt-2 flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-300 hover:bg-neutral-800"
-        >
-          <LogOut className="w-5 h-5" strokeWidth={1.75} /> Chiqish
-        </button>
       </aside>
     </>
   );

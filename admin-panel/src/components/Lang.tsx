@@ -11,7 +11,16 @@ export function LangBridge() {
 }
 
 /** Lotin | Кирилл switch; its own labels are never converted. */
-export function LangToggle({ dark = false, className = '' }: { dark?: boolean; className?: string }) {
+export function LangToggle({
+  dark = false,
+  size = 'md',
+  className = '',
+}: {
+  dark?: boolean;
+  size?: 'md' | 'sm';
+  className?: string;
+}) {
+  const sm = size === 'sm';
   const [lang, setCur] = useState<Lang>('latn');
   useEffect(() => setCur(getLang()), []);
   const btn = (l: Lang, label: string) => (
@@ -20,8 +29,10 @@ export function LangToggle({ dark = false, className = '' }: { dark?: boolean; c
       onClick={() => {
         if (l !== lang) setLang(l);
       }}
+      aria-pressed={l === lang}
       className={
-        'h-8 px-3 rounded-lg text-xs font-bold transition-colors ' +
+        (sm ? 'h-7 px-2.5 rounded-md text-[11px] ' : 'h-8 px-3 rounded-lg text-xs ') +
+        'font-bold transition-colors ' +
         (l === lang
           ? 'bg-gold text-ink'
           : dark
@@ -35,9 +46,11 @@ export function LangToggle({ dark = false, className = '' }: { dark?: boolean; c
   return (
     <div
       data-no-translit
+      title="Yozuv: lotin yoki kirill"
       className={
-        'inline-flex items-center gap-1 rounded-xl border p-1 ' +
-        (dark ? 'border-neutral-700' : 'border-line bg-white') +
+        'inline-flex items-center border ' +
+        (sm ? 'gap-0.5 rounded-lg p-0.5 ' : 'gap-1 rounded-xl p-1 ') +
+        (dark ? 'border-neutral-700 bg-neutral-900' : 'border-line bg-white') +
         (className ? ' ' + className : '')
       }
     >
