@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { MiniMap } from '@/components/MiniMap';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -134,17 +135,7 @@ function Inner() {
             </div>
           </div>
           <div className="aspect-[16/10] w-full">
-            <iframe
-              title="map"
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=${
-                order.pickupLng - 0.01
-              }%2C${order.pickupLat - 0.01}%2C${
-                order.pickupLng + 0.01
-              }%2C${
-                order.pickupLat + 0.01
-              }&layer=mapnik&marker=${order.pickupLat}%2C${order.pickupLng}`}
-              className="w-full h-full border-0"
-            />
+            <MiniMap lat={Number(order.pickupLat)} lng={Number(order.pickupLng)} />
           </div>
         </div>
       </section>

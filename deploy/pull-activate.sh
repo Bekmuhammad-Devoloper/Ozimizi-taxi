@@ -27,22 +27,31 @@ cd "$DIR"
 : "${BOT_TOKEN:?}" "${SMTP_USER:?}" "${SMTP_PASS:?}" "${DB_PASSWORD:?}" "${JWT_SECRET:?}"
 
 echo "→ Download"
-rm -rf "$NEW" "$DIR/unpack" "$DIR/app.tgz"
-# Vega ↔ Tashkent resets happen now and then: retry on any error and resume.
-for i in 1 2 3 4 5 6; do
-  curl -4 -fsSL --retry 5 --retry-all-errors --retry-delay 5 -C - -o "$DIR/app.tgz" "$URL" && break
-  echo "   download attempt $i failed, retrying…"; sleep 5
+rm -rf "$NEW" "$DIR/unpack"
+# Vega ↔ Tashkent resets are common. Never curl's own --retry here: on each retry
+# it cuts the file back to where that run started, losing all progress. Every
+# attempt is a new curl that continues from what is on disk.
+EXP=""
+for i in $(seq 1 30); do EXP=$(curl -4 -fsSL --max-time 60 "${URL%.tgz}.md5") && break; sleep 5; done
+[ -n "$EXP" ] || { echo "no md5 from the build server"; exit 1; }
+# A part left by an interrupted run of this same build is kept and continued.
+[ "$(cat "$DIR/app.tgz.md5" 2>/dev/null)" = "$EXP" ] || rm -f "$DIR/app.tgz"
+echo "$EXP" > "$DIR/app.tgz.md5"
+for i in $(seq 1 200); do
+  curl -4 -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 -C - -o "$DIR/app.tgz" "$URL" && break
+  # 33/416: the file is already complete.
+  rc=$?; [ "$rc" = 33 ] && break
+  echo "   attempt $i stopped (curl $rc) at $(du -m "$DIR/app.tgz" 2>/dev/null | cut -f1) MB, continuing…"; sleep 5
 done
-EXP=$(curl -4 -fsSL --retry 5 --retry-all-errors "${URL%.tgz}.md5")
 GOT=$(md5sum "$DIR/app.tgz" | cut -d' ' -f1)
-[ "$EXP" = "$GOT" ] || { echo "md5 mismatch: expected $EXP got $GOT"; exit 1; }
+[ "$EXP" = "$GOT" ] || { rm -f "$DIR/app.tgz" "$DIR/app.tgz.md5"; echo "md5 mismatch: expected $EXP got $GOT"; exit 1; }
 echo "   $(du -h "$DIR/app.tgz" | cut -f1), md5 ok"
 
 echo "→ Unpack"
 mkdir -p "$DIR/unpack"
 tar -xzf "$DIR/app.tgz" -C "$DIR/unpack"
 mv "$DIR/unpack/app" "$NEW"
-rm -rf "$DIR/unpack" "$DIR/app.tgz"
+rm -rf "$DIR/unpack" "$DIR/app.tgz" "$DIR/app.tgz.md5"
 [ -d "$APP/backend/uploads" ] && cp -a "$APP/backend/uploads" "$NEW/backend/" || true
 
 echo "→ Backend .env (secrets stay on this server)"
@@ -108,8 +117,19 @@ if [ "$WITH_APK" = "apk" ]; then
   echo "→ APKs"
   BASE=${URL%/app.tgz}
   mkdir -p "$DIR/apk"
-  for f in moviytaxi-driver.apk version.json moviytaxi-client.apk version-client.json; do
-    curl -4 -fsSL --retry 3 -o "$DIR/apk/$f.part" "$BASE/apk/$f" && mv "$DIR/apk/$f.part" "$DIR/apk/$f" && echo "   $f $(du -h "$DIR/apk/$f" | cut -f1)" || echo "   $f: not published"
+  for f in moviytaxi-driver.apk version.json moviytaxi-client.apk version-client.json moviytaxi-driver-flutter.apk version-flutter.json; do
+    # Same as above: each attempt continues what is on disk. A missing file (404) is final.
+    rm -f "$DIR/apk/$f.part"; rc=1
+    for i in $(seq 1 40); do
+      curl -4 -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 -C - -o "$DIR/apk/$f.part" "$BASE/apk/$f"; rc=$?
+      [ "$rc" = 0 ] || [ "$rc" = 22 ] && break
+      sleep 5
+    done
+    if [ "$rc" = 0 ]; then
+      mv "$DIR/apk/$f.part" "$DIR/apk/$f" && echo "   $f $(du -h "$DIR/apk/$f" | cut -f1)"
+    else
+      rm -f "$DIR/apk/$f.part"; echo "   $f: not published (curl $rc)"
+    fi
   done
 fi
 

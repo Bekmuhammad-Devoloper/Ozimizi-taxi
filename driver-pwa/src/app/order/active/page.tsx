@@ -11,6 +11,8 @@ import {
   Check,
   XCircle,
 } from 'lucide-react';
+import { MiniMap } from '@/components/MiniMap';
+import { NavCard } from '@/components/NavCard';
 import { OrderChat } from '@/components/OrderChat';
 import { Shell } from '@/components/Shell';
 import { FareCard, TariffLine, WaitPanel } from '@/components/RideMeter';
@@ -32,6 +34,7 @@ import {
   useTicker,
   useWaitToggle,
 } from '@/hooks/useMeter';
+import { useVoiceNav } from '@/hooks/useVoiceNav';
 import { useAuthStore } from '@/stores/auth';
 
 interface ClientInfo {
@@ -63,6 +66,17 @@ function ActiveInner() {
   const tariff = useTariff();
   // Dedicated, race-free "Kutish" / "Davom etish" (see useWaitToggle).
   const toggleWait = useWaitToggle(setErr);
+
+  // Voice directions: to the passenger first, then to the destination.
+  const toPickup = active?.status === 'ACCEPTED' || active?.status === 'ON_THE_WAY';
+  const riding = active?.status === 'IN_PROGRESS' && active?.source !== 'street';
+  const navTarget =
+    toPickup && active
+      ? { lat: Number(active.pickupLat), lng: Number(active.pickupLng) }
+      : riding && active?.destinationLat != null && active?.destinationLng != null
+        ? { lat: Number(active.destinationLat), lng: Number(active.destinationLng) }
+        : null;
+  const nav = useVoiceNav(navTarget, toPickup ? 'pickup' : 'dest');
 
   // Street pickups (taximeter) have their own screen.
   const isStreet = active?.source === 'street';
@@ -208,6 +222,8 @@ function ActiveInner() {
         <StepProgress status={active.status} />
       </header>
 
+      <NavCard nav={nav} />
+
       {/* CLIENT CARD */}
       {client && (
         <section className="px-6 mt-4">
@@ -276,16 +292,11 @@ function ActiveInner() {
             </div>
           )}
           <div className="aspect-[16/10] w-full">
-            <iframe
-              title="map"
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=${
-                active.pickupLng - 0.01
-              }%2C${active.pickupLat - 0.01}%2C${
-                active.pickupLng + 0.01
-              }%2C${
-                active.pickupLat + 0.01
-              }&layer=mapnik&marker=${active.pickupLat}%2C${active.pickupLng}`}
-              className="w-full h-full border-0"
+            <MiniMap
+              lat={riding && navTarget ? navTarget.lat : Number(active.pickupLat)}
+              lng={riding && navTarget ? navTarget.lng : Number(active.pickupLng)}
+              route={nav.route}
+              me={nav.me}
             />
           </div>
         </div>

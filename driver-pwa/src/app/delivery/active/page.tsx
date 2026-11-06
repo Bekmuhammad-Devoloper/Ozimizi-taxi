@@ -1,5 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { MiniMap } from '@/components/MiniMap';
+import { NavCard } from '@/components/NavCard';
+import { useVoiceNav, VoiceNavView } from '@/hooks/useVoiceNav';
 import { useRouter } from 'next/navigation';
 import {
   Phone,
@@ -82,6 +85,22 @@ function Inner() {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
+
+  // Voice directions: to the kitchen until the food is collected, then to the client.
+  const stops = d?.group && d.group.length > 1 ? d.group : null;
+  const collected = stops
+    ? stops.every((g) => g.status === 'PICKED_UP' || g.status === 'DELIVERED')
+    : d?.status === 'PICKED_UP';
+  const nav = useVoiceNav(
+    !d || !live
+      ? null
+      : collected
+        ? { lat: Number(d.lat), lng: Number(d.lng) }
+        : d.kitchen
+          ? { lat: Number(d.kitchen.lat), lng: Number(d.kitchen.lng) }
+          : null,
+    'dest',
+  );
 
   if (!d) {
     return (
@@ -320,7 +339,7 @@ function Inner() {
         {!picked && (
           <NavButton lat={d.kitchen.lat} lng={d.kitchen.lng} label="Oshxonaga yo‘l ko‘rsatish" />
         )}
-        {!picked && <MapFrame lat={d.kitchen.lat} lng={d.kitchen.lng} />}
+        {!picked && <MapFrame lat={d.kitchen.lat} lng={d.kitchen.lng} nav={nav} />}
       </div>
     </section>
   );
@@ -370,7 +389,7 @@ function Inner() {
           </div>
         )}
         <NavButton lat={d.lat} lng={d.lng} label="Mijozga yo‘l ko‘rsatish" />
-        {picked && <MapFrame lat={d.lat} lng={d.lng} />}
+        {picked && <MapFrame lat={d.lat} lng={d.lng} nav={nav} />}
       </div>
     </section>
   );
@@ -378,6 +397,8 @@ function Inner() {
   return (
     <>
       {header}
+
+      <NavCard nav={nav} />
 
       {group && (
         <GroupStops
@@ -647,17 +668,11 @@ function NavButton({ lat, lng, label }: { lat: number; lng: number; label: strin
   );
 }
 
-function MapFrame({ lat, lng }: { lat: number; lng: number }) {
+function MapFrame({ lat, lng, nav }: { lat: number; lng: number; nav: VoiceNavView }) {
   if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return null;
   return (
     <div className="aspect-[16/10] w-full border-t border-line">
-      <iframe
-        title="map"
-        src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01}%2C${
-          lat - 0.01
-        }%2C${lng + 0.01}%2C${lat + 0.01}&layer=mapnik&marker=${lat}%2C${lng}`}
-        className="w-full h-full border-0"
-      />
+      <MiniMap lat={Number(lat)} lng={Number(lng)} route={nav.route} me={nav.me} />
     </div>
   );
 }

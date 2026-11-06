@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { MiniMap } from '@/components/MiniMap';
 import { useRouter } from 'next/navigation';
 import { IncomingOrder, useOrderStore } from '@/stores/order';
 import { acceptDelivery } from '@/stores/delivery';
@@ -40,10 +41,8 @@ export function IncomingOrderModal() {
 
   const decline = () => {
     stopOrderAlarm(incoming.orderId);
-    if (incoming.mode !== 'all') {
-      // Hand it to the next nearest driver right away instead of waiting.
-      void api.post(`/driver/orders/${incoming.orderId}/decline`).catch(() => undefined);
-    }
+    // Passes a personal offer on at once; in the middle it stops the re-rings for me.
+    void api.post(`/driver/orders/${incoming.orderId}/decline`).catch(() => undefined);
     setIncoming(null);
   };
 
@@ -157,17 +156,7 @@ export function IncomingOrderModal() {
         </dl>
 
         <div className="aspect-video w-full rounded-md overflow-hidden border border-line mb-6">
-          <iframe
-            title="map"
-            src={`https://www.openstreetmap.org/export/embed.html?bbox=${
-              incoming.pickup.lng - 0.01
-            }%2C${incoming.pickup.lat - 0.01}%2C${
-              incoming.pickup.lng + 0.01
-            }%2C${
-              incoming.pickup.lat + 0.01
-            }&layer=mapnik&marker=${incoming.pickup.lat}%2C${incoming.pickup.lng}`}
-            className="w-full h-full border-0"
-          />
+          <MiniMap lat={Number(incoming.pickup.lat)} lng={Number(incoming.pickup.lng)} />
         </div>
 
         <div className="flex gap-3">
@@ -295,17 +284,7 @@ function DeliveryOffer({
         </div>
 
         <div className="aspect-[2/1] w-full rounded-md overflow-hidden border border-line mb-6">
-          <iframe
-            title="map"
-            src={`https://www.openstreetmap.org/export/embed.html?bbox=${
-              offer.pickup.lng - 0.01
-            }%2C${offer.pickup.lat - 0.01}%2C${
-              offer.pickup.lng + 0.01
-            }%2C${
-              offer.pickup.lat + 0.01
-            }&layer=mapnik&marker=${offer.pickup.lat}%2C${offer.pickup.lng}`}
-            className="w-full h-full border-0"
-          />
+          <MiniMap lat={Number(offer.pickup.lat)} lng={Number(offer.pickup.lng)} />
         </div>
 
         <div className="flex gap-3">
