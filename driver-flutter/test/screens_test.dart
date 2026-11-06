@@ -3,7 +3,6 @@
 // through (offer → accept → ride → complete), and `--update-goldens` writes
 // screenshots to test/goldens for a look at the design.
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

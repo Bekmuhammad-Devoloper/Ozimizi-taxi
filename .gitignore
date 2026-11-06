@@ -44,3 +44,6 @@ driver-android/android/app/release/
 # VPS root password for deploy/rrun.py (never commit)
 deploy/.eskiz.pass
 deploy/code.tgz
+
+# Built APKs handed over for phone tests
+deploy/out/
