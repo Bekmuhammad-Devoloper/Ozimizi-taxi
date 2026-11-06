@@ -296,6 +296,51 @@ class LangToggle extends StatelessWidget {
       );
 }
 
+/// A big sum that shrinks to fit its place instead of being cut off
+/// ("1 250 000 so‘m" in a small card on a narrow phone).
+class Fit extends StatelessWidget {
+  final Widget child;
+  final AlignmentGeometry alignment;
+  const Fit(this.child, {super.key, this.alignment = AlignmentDirectional.centerStart});
+  @override
+  Widget build(BuildContext context) => FittedBox(fit: BoxFit.scaleDown, alignment: alignment, child: child);
+}
+
+/// A sum with "so‘m" after it, on one line, shrinking to fit.
+class SumLine extends StatelessWidget {
+  final String value;
+  final double size;
+  final Color? color;
+  final String unit;
+  final double unitSize;
+  final Color unitColor;
+  final AlignmentGeometry alignment;
+  const SumLine(this.value,
+      {super.key,
+      required this.size,
+      this.color,
+      this.unit = 'so‘m',
+      this.unitSize = 14,
+      this.unitColor = n400,
+      this.alignment = AlignmentDirectional.centerStart});
+  @override
+  Widget build(BuildContext context) => Fit(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            T(value, size: size, weight: FontWeight.w800, color: color),
+            if (unit.isNotEmpty) ...[
+              SizedBox(width: size / 5),
+              T(unit, size: unitSize, color: unitColor),
+            ],
+          ],
+        ),
+        alignment: alignment,
+      );
+}
+
 /// Off in widget tests (no tile server there).
 bool mapsEnabled = true;
 

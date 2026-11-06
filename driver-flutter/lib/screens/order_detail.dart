@@ -63,11 +63,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             StatusBadge(status),
           ]),
           const SizedBox(height: 10),
-          Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-            T(o['price'] != null ? fmtSum(o['price']) : '—', size: 30, weight: FontWeight.w800, color: Colors.white),
-            const SizedBox(width: 8),
-            const T('so‘m', color: n400),
-          ]),
+          SumLine(o['price'] != null ? fmtSum(o['price']) : '—', size: 30, color: Colors.white),
         ]),
       ),
       Section(

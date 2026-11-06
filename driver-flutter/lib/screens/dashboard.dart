@@ -178,11 +178,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Caption('Balans', color: n400),
                   const SizedBox(height: 4),
-                  Wrap(crossAxisAlignment: WrapCrossAlignment.end, children: [
-                    T(fmtSum(d?['balance']), size: 30, weight: FontWeight.w800, color: Colors.white),
-                    const SizedBox(width: 6),
-                    const T('so‘m', color: n400),
-                  ]),
+                  SumLine(fmtSum(d?['balance']), size: 30, color: Colors.white),
                 ]),
               ),
               const SizedBox(width: 12),
@@ -346,7 +342,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   T('oxirgi 7 kun', size: 10, color: n400),
                 ]),
                 const SizedBox(height: 10),
-                T(money(week.revenue), size: 28, weight: FontWeight.w800, color: Colors.white),
+                Fit(T(money(week.revenue), size: 28, weight: FontWeight.w800, color: Colors.white)),
                 const SizedBox(height: 10),
                 T('${week.count} buyurtma    ${week.km.toStringAsFixed(1)} km', size: 12, color: const Color(0xFFD4D4D4)),
               ]),
@@ -423,9 +419,9 @@ class _StatRow extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(i, size: 16, color: goldDark),
               const SizedBox(height: 4),
-              Caption(label),
+              SizedBox(height: 14, child: Fit(Caption(label))),
               const SizedBox(height: 4),
-              T(value, size: 17, weight: FontWeight.w700, maxLines: 1),
+              SizedBox(height: 24, child: Fit(T(value, size: 17, weight: FontWeight.w700))),
               T(unit.isEmpty ? ' ' : unit, size: 10, color: n500),
             ]),
           ),
@@ -433,7 +429,7 @@ class _StatRow extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Caption(title),
       const SizedBox(height: 10),
-      Row(children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         card(Icons.trending_up, 'Daromad', fmtSum(revenue), 'so‘m'),
         const SizedBox(width: 8),
         card(Icons.tag, 'Buyurtma', '$count', ''),

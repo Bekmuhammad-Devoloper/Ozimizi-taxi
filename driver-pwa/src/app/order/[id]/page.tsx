@@ -15,6 +15,7 @@ import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
 import { OrderStatus } from '@/stores/order';
+import { FitText } from '@/components/FitText';
 
 interface OrderDetail {
   id: string;
@@ -111,10 +112,10 @@ function Inner() {
           </p>
           <StatusBadge status={order.status} />
         </div>
-        <p className="mt-3 text-3xl font-extrabold tabular-nums">
+        <FitText className="mt-3 text-3xl font-extrabold tabular-nums">
           {order.price ? fmt(order.price) : '—'}
           <span className="ml-2 text-sm font-normal text-neutral-400">so‘m</span>
-        </p>
+        </FitText>
       </header>
 
       <section className="px-6 mt-4">

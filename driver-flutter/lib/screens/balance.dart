@@ -82,7 +82,7 @@ class _BalanceScreenState extends State<BalanceScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Caption(label),
               const SizedBox(height: 4),
-              T(fmtSum(v), size: 17, weight: FontWeight.w700, maxLines: 1),
+              SizedBox(height: 24, child: Fit(T(fmtSum(v), size: 17, weight: FontWeight.w700))),
               const T('so‘m', size: 10, color: n500),
             ]),
           ),
@@ -99,7 +99,7 @@ class _BalanceScreenState extends State<BalanceScreen> {
             Caption('Joriy balans', color: gold),
           ]),
           const SizedBox(height: 10),
-          T(fmtSum(_balance), size: 44, weight: FontWeight.w800, color: negative ? const Color(0xFFF87171) : Colors.white),
+          Fit(T(fmtSum(_balance), size: 44, weight: FontWeight.w800, color: negative ? const Color(0xFFF87171) : Colors.white)),
           const T('so‘m', color: n400),
           if (negative) ...[
             const SizedBox(height: 10),

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import { api } from '@/lib/api';
+import { FitText } from '@/components/FitText';
 
 interface Receipt {
   shortId: string;
@@ -95,9 +96,9 @@ export default function ReceiptPage() {
               {r.discount > 0 && <Row k="Promo chegirma" v={`− ${money(r.discount)} so‘m`} />}
               {r.bonusUsed > 0 && <Row k="Bonusdan to‘landi" v={`− ${money(r.bonusUsed)} so‘m`} />}
             </dl>
-            <div className="mt-4 rounded-2xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">Jami</span>
-              <span className="text-2xl font-extrabold tabular-nums">{money(r.price)} so‘m</span>
+            <div className="mt-4 rounded-2xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-center justify-between gap-3">
+              <span className="text-xs font-bold text-blue-900 uppercase tracking-wider shrink-0">Jami</span>
+              <FitText className="text-2xl font-extrabold tabular-nums justify-end">{money(r.price)} so‘m</FitText>
             </div>
             {r.cashDue < r.price && (
               <p className="mt-2 text-xs text-neutral-600 text-right">

@@ -146,11 +146,7 @@ class WaitPanel extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Caption('Kutish haqi'),
               const SizedBox(height: 2),
-              Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                Flexible(child: T(fmtSum(fee), size: 28, weight: FontWeight.w800)),
-                const SizedBox(width: 4),
-                const T('so‘m', size: 12, weight: FontWeight.w600, color: n500),
-              ]),
+              SumLine(fmtSum(fee), size: 28, unitSize: 12, unitColor: n500),
             ]),
           ),
         ]),
@@ -206,7 +202,7 @@ class FareCard extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Caption('Jami narx'),
             const SizedBox(height: 6),
-            T(fmtSum(total), size: 24, weight: FontWeight.w800),
+            Fit(T(fmtSum(total), size: 24, weight: FontWeight.w800)),
             const SizedBox(height: 6),
             T('$distanceLabel ${fmtSum(distanceFare)} + kutish ${fmtSum(waitFee)}', size: 11, color: n500),
           ]),
@@ -220,7 +216,7 @@ class FareCard extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Caption('Komissiya${pct > 0 ? ' ${pct.round()}%' : ''}', color: goldDeep),
             const SizedBox(height: 6),
-            T(fmtSum(commissionFor(total, tariff)), size: 24, weight: FontWeight.w800),
+            Fit(T(fmtSum(commissionFor(total, tariff)), size: 24, weight: FontWeight.w800)),
           ]),
         ),
       ),

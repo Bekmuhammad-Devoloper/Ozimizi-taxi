@@ -39,6 +39,7 @@ import { getLastKnownPosition } from '@/hooks/useDriverSocket';
 import { useAuthStore } from '@/stores/auth';
 import { isDeliveryLive, useDeliveryStore } from '@/stores/delivery';
 import { OrderModel, useOrderStore } from '@/stores/order';
+import { FitText } from '@/components/FitText';
 
 export default function TaximeterPage() {
   return (
@@ -311,9 +312,9 @@ function TaximeterInner() {
         {running && (
           <div className="relative mt-6 text-center">
             <p className="text-[10px] uppercase tracking-widest text-gold font-bold">Yo‘l haqi</p>
-            <p className="mt-1 text-6xl font-extrabold tabular-nums leading-none">
+            <FitText align="center" className="mt-1 text-6xl font-extrabold tabular-nums leading-none">
               {tariff ? fmtSum(total) : '—'}
-            </p>
+            </FitText>
             <p className="mt-1 text-sm text-neutral-400">so‘m</p>
             {tariff && (
               <p className="mt-2 text-xs text-neutral-400 tabular-nums">
@@ -499,10 +500,10 @@ function Summary({ ride }: { ride: OrderModel }) {
         <p className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">
           Mijozdan olinadi (naqd)
         </p>
-        <p className="mt-1 text-5xl font-extrabold tabular-nums leading-none text-ink">
+        <FitText className="mt-1 text-5xl font-extrabold tabular-nums leading-none text-ink">
           {fmtSum(price)}
           <span className="ml-2 text-base font-semibold text-neutral-500">so‘m</span>
-        </p>
+        </FitText>
         <div className="mt-4 border-t border-line pt-2">
           <Row label="Masofa" value={`${Number(ride.distanceKm ?? 0).toFixed(2)} km`} />
           <Row

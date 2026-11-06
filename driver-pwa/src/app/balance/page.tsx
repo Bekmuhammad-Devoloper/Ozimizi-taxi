@@ -5,6 +5,7 @@ import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
+import { FitText } from '@/components/FitText';
 
 interface BalanceTx {
   id: string;
@@ -80,14 +81,14 @@ function Inner() {
             Joriy balans
           </p>
         </div>
-        <p
+        <FitText
           className={
             'relative mt-3 text-5xl font-extrabold tabular-nums ' +
             (negative ? 'text-red-400' : '')
           }
         >
           {fmt(balance)}
-        </p>
+        </FitText>
         <p className="relative text-sm text-neutral-400 mt-1">so‘m</p>
         {negative && (
           <p className="relative mt-3 text-xs text-red-200 bg-red-500/15 border border-red-400/30 rounded-xl px-3 py-2 leading-relaxed">
@@ -172,14 +173,13 @@ function Inner() {
 
 function PeriodCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-white border border-line rounded-2xl p-3 shadow-sm">
+    <div className="bg-white border border-line rounded-2xl p-3 shadow-sm min-w-0">
       <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
         {label}
       </p>
-      <p className="mt-1 text-lg font-bold tabular-nums">
-        {fmt(value)}
-        <span className="ml-1 text-[10px] font-normal text-neutral-500">so‘m</span>
-      </p>
+      {/* The unit on its own line: the number gets the card's whole width. */}
+      <FitText className="mt-1 text-lg font-bold tabular-nums leading-tight">{fmt(value)}</FitText>
+      <p className="text-[10px] text-neutral-500 leading-tight">so‘m</p>
     </div>
   );
 }

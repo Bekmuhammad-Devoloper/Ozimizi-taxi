@@ -385,11 +385,7 @@ class _ActiveDeliveryScreenState extends State<ActiveDeliveryScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Caption('Mijozdan olinadi (naqd)', color: gold),
             const SizedBox(height: 8),
-            Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-              T(fmtSum(_sum('total')), size: 44, weight: FontWeight.w800, color: Colors.white),
-              const SizedBox(width: 8),
-              const T('so‘m', size: 16, color: n400),
-            ]),
+            SumLine(fmtSum(_sum('total')), size: 44, color: Colors.white, unitSize: 16),
             const SizedBox(height: 8),
             T('Taomlar ${fmtSum(_sum('itemsTotal'))} + yetkazish ${fmtSum(_sum('deliveryFee'))} so‘m${group != null ? ' · ${group.length} ta oshxona' : ''}', size: 12, color: n400),
           ]),

@@ -203,7 +203,7 @@ class _TaximeterScreenState extends State<TaximeterScreen> {
               const SizedBox(height: 22),
               const Caption('Yo‘l haqi', color: gold),
               const SizedBox(height: 4),
-              T(tariff != null ? fmtSum(total) : '—', size: 56, weight: FontWeight.w800, color: Colors.white),
+              Fit(T(tariff != null ? fmtSum(total) : '—', size: 56, weight: FontWeight.w800, color: Colors.white), alignment: Alignment.center),
               const T('so‘m', color: n400),
               if (tariff != null) ...[
                 const SizedBox(height: 8),
@@ -332,7 +332,7 @@ class _TaximeterScreenState extends State<TaximeterScreen> {
         const SizedBox(height: 10),
         const Caption('Mijozdan olinadi (naqd)'),
         const SizedBox(height: 4),
-        T(money(price), size: 36, weight: FontWeight.w800),
+        Fit(T(money(price), size: 36, weight: FontWeight.w800)),
         const Divider(color: line, height: 24),
         KV('Masofa', '${numOf(ride['distanceKm']).toStringAsFixed(2)} km'),
         KV('Kutish (${fmtClock(numOf(ride['waitingSeconds']))})', money(ride['waitingFee'])),

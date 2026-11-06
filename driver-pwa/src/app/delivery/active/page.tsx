@@ -29,6 +29,7 @@ import {
   syncActiveDelivery,
   useDeliveryStore,
 } from '@/stores/delivery';
+import { FitText } from '@/components/FitText';
 
 export default function ActiveDeliveryPage() {
   return (
@@ -457,10 +458,10 @@ function Inner() {
           <p className="relative text-[10px] uppercase tracking-widest text-gold font-bold">
             Mijozdan olinadi (naqd)
           </p>
-          <p className="relative mt-2 text-5xl font-extrabold tabular-nums leading-none">
+          <FitText className="relative mt-2 text-5xl font-extrabold tabular-nums leading-none">
             {fmt(cashAll)}
             <span className="ml-2 text-base font-normal text-neutral-400">so‘m</span>
-          </p>
+          </FitText>
           <p className="relative mt-2 text-xs text-neutral-400">
             Taomlar {fmt(itemsAll)} + yetkazish {fmt(feeAll)} so‘m
             {group ? ` · ${group.length} ta oshxona` : ''}

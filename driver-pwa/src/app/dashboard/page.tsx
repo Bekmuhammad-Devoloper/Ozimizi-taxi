@@ -27,6 +27,7 @@ import {
   isDeliveryLive,
   useDeliveryStore,
 } from '@/stores/delivery';
+import { FitText } from '@/components/FitText';
 
 export default function DashboardPage() {
   return (
@@ -170,16 +171,16 @@ function DashboardInner() {
         </div>
 
         <div className="relative flex items-end justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-wider text-neutral-400">
               Balans
             </p>
-            <p className="mt-1 text-3xl font-extrabold tabular-nums leading-none">
+            <FitText className="mt-1 text-3xl font-extrabold tabular-nums leading-none">
               {fmt(driver?.balance ?? 0)}
               <span className="ml-2 text-sm font-normal text-neutral-400">
                 so‘m
               </span>
-            </p>
+            </FitText>
           </div>
 
           {driver?.isApproved === false ? (
@@ -441,12 +442,10 @@ function DashboardInner() {
                   oxirgi 7 kun
                 </p>
               </div>
-              <div className="relative flex items-baseline gap-2">
-                <p className="text-3xl font-extrabold tabular-nums">
-                  {fmt(weekStats.revenue)}
-                </p>
-                <p className="text-sm text-neutral-400">so‘m</p>
-              </div>
+              <FitText className="relative text-3xl font-extrabold tabular-nums">
+                {fmt(weekStats.revenue)}
+                <span className="ml-2 text-sm font-normal text-neutral-400">so‘m</span>
+              </FitText>
               <div className="relative flex gap-6 mt-3 text-xs text-neutral-300">
                 <span>
                   <b className="text-white">{weekStats.count}</b> buyurtma
@@ -487,19 +486,14 @@ function StatCard({
   unit: string;
 }) {
   return (
-    <div className="bg-white border border-line rounded-2xl p-3">
+    <div className="bg-white border border-line rounded-2xl p-3 min-w-0">
       <div className="text-gold-dark mb-1">{icon}</div>
       <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
         {label}
       </p>
-      <p className="mt-1 text-lg font-bold tabular-nums leading-tight">
-        {value}
-        {unit && (
-          <span className="ml-1 text-[10px] font-normal text-neutral-500">
-            {unit}
-          </span>
-        )}
-      </p>
+      {/* The unit on its own line: the number gets the card's whole width. */}
+      <FitText className="mt-1 text-lg font-bold tabular-nums leading-tight">{value}</FitText>
+      <p className="text-[10px] text-neutral-500 leading-tight">{unit || ' '}</p>
     </div>
   );
 }

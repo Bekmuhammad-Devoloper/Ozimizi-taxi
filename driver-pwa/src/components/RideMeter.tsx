@@ -2,6 +2,7 @@
 import { Clock, Loader2, Pause, PlayCircle } from 'lucide-react';
 import { commissionFor } from '@/lib/fare';
 import { fmtClock, fmtSum, type DriverTariff } from '@/lib/meter';
+import { FitText } from '@/components/FitText';
 
 /**
  * Waiting clock: time and its cost side by side, the free-minutes rule, and
@@ -59,14 +60,14 @@ export function WaitPanel({
             {fmtClock(seconds)}
           </p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">
             Kutish haqi
           </p>
-          <p className="mt-0.5 text-3xl font-extrabold tabular-nums leading-none text-ink">
+          <FitText className="mt-0.5 text-3xl font-extrabold tabular-nums leading-none text-ink">
             {fmtSum(fee)}
             <span className="ml-1 text-xs font-semibold text-neutral-500">so‘m</span>
-          </p>
+          </FitText>
         </div>
       </div>
 
@@ -130,22 +131,22 @@ export function FareCard({
     tariff.commissionPercent && tariff.commissionPercent > 0 ? `${tariff.commissionPercent}%` : null;
   return (
     <div className="grid grid-cols-2 gap-3">
-      <div className="bg-white border border-line rounded-2xl p-4">
+      <div className="bg-white border border-line rounded-2xl p-4 min-w-0">
         <p className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Jami narx</p>
-        <p className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
+        <FitText className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
           {fmtSum(total)}
-        </p>
+        </FitText>
         <p className="mt-1.5 text-[11px] text-neutral-500 leading-snug">
           {distanceLabel} {fmtSum(distanceFare)} + kutish {fmtSum(waitFee)}
         </p>
       </div>
-      <div className="bg-gold/10 border border-gold/40 rounded-2xl p-4">
+      <div className="bg-gold/10 border border-gold/40 rounded-2xl p-4 min-w-0">
         <p className="text-[10px] uppercase tracking-widest text-gold-deep font-bold">
           Komissiya{pct ? ` ${pct}` : ''}
         </p>
-        <p className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
+        <FitText className="mt-1.5 text-2xl font-extrabold tabular-nums leading-none text-ink">
           {fmtSum(com)}
-        </p>
+        </FitText>
       </div>
     </div>
   );

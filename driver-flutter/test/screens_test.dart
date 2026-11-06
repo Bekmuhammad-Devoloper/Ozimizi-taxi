@@ -6,6 +6,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -15,6 +16,7 @@ import 'package:moviy_driver/core/api.dart';
 import 'package:moviy_driver/core/fare.dart';
 import 'package:moviy_driver/core/lang.dart';
 import 'package:moviy_driver/core/store.dart';
+import 'package:moviy_driver/core/util.dart';
 import 'package:moviy_driver/main.dart';
 import 'package:moviy_driver/screens/auth.dart';
 import 'package:moviy_driver/screens/balance.dart';
@@ -557,5 +559,48 @@ void main() {
     await show(const ActiveOrderScreen());
     await show(const BalanceScreen());
     await show(const ProfileScreen());
+  });
+
+  testWidgets('7-digit sums are shown whole on a 320 px phone', (t) async {
+    final now = DateTime.now();
+    String at(Duration ago) => now.subtract(ago).toUtc().toIso8601String();
+    auth.setDriver({'balance': '12345678.00', 'isOnline': false});
+    fake.routes['GET /driver/me'] = {..._driver, 'balance': '12345678.00', 'isOnline': false};
+    fake.routes['GET /driver/orders/history'] = [
+      _order('COMPLETED', {'price': '1375000.00', 'commission': '125000.00', 'distanceKm': '480.000', 'createdAt': at(const Duration(days: 1))}),
+      _order('COMPLETED', {'price': '11095678.00', 'commission': '0.00', 'distanceKm': '20.000', 'createdAt': at(const Duration(days: 3))}),
+    ];
+    fake.routes['GET /driver/balance'] = {'balance': '12345678.00', 'transactions': []};
+    t.view.physicalSize = const Size(320 * 2, 1100 * 2);
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    Future<void> show(Widget w, String name, [void Function()? check]) async {
+      await t.pumpWidget(appProviders(MaterialApp(navigatorKey: navKey, theme: appTheme(), debugShowCheckedModeBanner: false, home: w, onGenerateRoute: appRoute)));
+      await t.pump(const Duration(milliseconds: 300));
+      await t.pump(const Duration(milliseconds: 300));
+      // Every digit is on screen: no number cut with "…" or wrapped off.
+      for (final e in find.byType(RichText).evaluate()) {
+        final p = e.renderObject as RenderParagraph;
+        final text = p.text.toPlainText();
+        if (!RegExp(r'\d').hasMatch(text)) continue;
+        expect(p.didExceedMaxLines, isFalse, reason: 'cut: $text');
+      }
+      check?.call();
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/$name.png'));
+      await _end(t);
+    }
+
+    await show(const DashboardScreen(), 'big_dashboard', () {
+      expect(find.text(fmtSum(12345678)), findsOneWidget);
+      expect(find.text(fmtSum(1250000)), findsOneWidget);
+    });
+    await show(const BalanceScreen(), 'big_balance');
+    final ride = _order('IN_PROGRESS', {'startedAt': _now});
+    fake.routes['GET /driver/orders/${ride['id']}'] = ride;
+    orders.setActive(ride);
+    orders.addDistance(480, false);
+    await show(const ActiveOrderScreen(), 'big_ride', () {
+      expect(find.text('JAMI NARX'), findsOneWidget);
+    });
   });
 }
