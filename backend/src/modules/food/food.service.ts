@@ -103,6 +103,9 @@ export interface KitchenOrderInput {
 const ACTIVE_COURIER: FoodOrderStatus[] = ['COOKING', 'READY', 'PICKED_UP'];
 const FINAL: FoodOrderStatus[] = ['DELIVERED', 'REJECTED', 'CANCELLED'];
 const ROAD = 1.3; // straight line → road distance
+/** Kitchens of one order farther apart than this (km) get separate couriers. */
+const DEFAULT_GROUP_MAX_KM = 3;
+const GROUP_LIVE: FoodOrderStatus[] = ['NEW', 'COOKING', 'READY', 'PICKED_UP', 'DELIVERED'];
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -350,7 +353,13 @@ export class FoodService implements OnModuleInit {
 
   private async feeSettings() {
     const n = async (
-      k: 'delivery_base_fee' | 'delivery_free_km' | 'delivery_per_km' | 'delivery_commission_percent' | 'delivery_extra_stop_fee',
+      k:
+        | 'delivery_base_fee'
+        | 'delivery_free_km'
+        | 'delivery_per_km'
+        | 'delivery_commission_percent'
+        | 'delivery_extra_stop_fee'
+        | 'delivery_group_max_km',
       d: number,
     ) => {
       const raw = (await this.settings.get(k)).trim();
@@ -363,40 +372,88 @@ export class FoodService implements OnModuleInit {
       perKm: await n('delivery_per_km', 2000),
       commissionPct: Math.min(100, await n('delivery_commission_percent', 10)),
       extraStop: await n('delivery_extra_stop_fee', 3000),
+      groupMaxKm: await n('delivery_group_max_km', DEFAULT_GROUP_MAX_KM),
     };
   }
 
   // ------------------------------------------------------------ group orders
-  // A client ordering from several kitchens at once gets ONE courier who
-  // collects everything, and pays ONE delivery fee: the farthest kitchen's
-  // price + an admin-set amount for every extra kitchen. The group's first
-  // order carries that fee, the others carry 0.
+  // A client ordering from several kitchens at once: kitchens close to each
+  // other (within the admin's `delivery_group_max_km`) share ONE courier who
+  // collects them all, for ONE fee: the farthest kitchen's price + the admin's
+  // amount for every extra kitchen. A kitchen farther away gets a courier and
+  // a fee of its own. In each courier's run the first order carries the fee,
+  // the others carry 0.
 
-  /** Live orders placed together with `o` (same group, delivered to one point), oldest first. */
-  private async groupOrders(o: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>): Promise<FoodOrder[]> {
-    if (!o.groupId || o.deliveryType !== 'delivery') return [];
-    return this.orders.find({
-      where: {
-        groupId: o.groupId,
-        clientId: o.clientId ?? IsNull(),
-        deliveryType: 'delivery',
-        status: In(['NEW', 'COOKING', 'READY', 'PICKED_UP', 'DELIVERED']),
-      },
-      relations: { kitchen: true },
-      order: { createdAt: 'ASC' },
-    });
+  /** Road km between two kitchens. */
+  static kitchenKm(a: Pick<Kitchen, 'lat' | 'lng'>, b: Pick<Kitchen, 'lat' | 'lng'>): number {
+    return Math.round(haversineKm(Number(a.lat), Number(a.lng), Number(b.lat), Number(b.lng)) * ROAD * 10) / 10;
   }
 
-  /** One delivery fee for several kitchens going to the same point. */
-  async groupQuote(ks: Kitchen[], toLat: number, toLng: number) {
-    const s = await this.feeSettings();
-    if (!ks.length) return { km: 0, fee: 0, mode: 'courier' as const, extraStopFee: s.extraStop };
+  /**
+   * Splits kitchens between couriers: each joins the first courier whose
+   * kitchens are all within `maxKm` of it, or else gets a courier of its own.
+   * Input order decides, so a split made at checkout never changes later.
+   */
+  static splitByCourier<T>(items: T[], kitchenOf: (t: T) => Pick<Kitchen, 'lat' | 'lng'>, maxKm: number): T[][] {
+    const runs: T[][] = [];
+    for (const it of items) {
+      const k = kitchenOf(it);
+      const run = runs.find((r) => r.every((x) => FoodService.kitchenKm(kitchenOf(x), k) <= maxKm));
+      if (run) run.push(it);
+      else runs.push([it]);
+    }
+    return runs;
+  }
+
+  /**
+   * Every courier run of `o`'s group, oldest order first. Cancelled orders are
+   * kept in: the split depends only on what was ordered, and in what order.
+   */
+  private async groupRuns(o: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>): Promise<FoodOrder[][]> {
+    if (!o.groupId || o.deliveryType !== 'delivery') return [];
+    const all = await this.orders.find({
+      where: { groupId: o.groupId, clientId: o.clientId ?? IsNull(), deliveryType: 'delivery' },
+      relations: { kitchen: true },
+      order: { createdAt: 'ASC', id: 'ASC' },
+    });
+    const { groupMaxKm } = await this.feeSettings();
+    return FoodService.splitByCourier(all, (x) => x.kitchen, groupMaxKm);
+  }
+
+  /** Live orders the courier of `o` collects together with it (its run), oldest first. */
+  private async groupOrders(o: Pick<FoodOrder, 'id' | 'groupId' | 'clientId' | 'deliveryType'>): Promise<FoodOrder[]> {
+    const run = (await this.groupRuns(o)).find((r) => r.some((x) => x.id === o.id)) ?? [];
+    return run.filter((x) => GROUP_LIVE.includes(x.status));
+  }
+
+  /** One courier collecting these kitchens: the farthest one's price + the extra-stop fee for each other. */
+  private async runQuote(ks: Kitchen[], toLat: number, toLng: number, extraStop: number) {
     const qs = await Promise.all(ks.map((k) => this.quoteFor(k, toLat, toLng)));
     return {
       km: Math.max(...qs.map((q) => q.km)),
-      fee: Math.max(...qs.map((q) => q.fee)) + s.extraStop * (qs.length - 1),
+      fee: Math.max(...qs.map((q) => q.fee)) + extraStop * (qs.length - 1),
       mode: qs.some((q) => q.mode === 'taxi') ? ('taxi' as const) : ('courier' as const),
-      extraStopFee: s.extraStop,
+    };
+  }
+
+  /** Delivery for several kitchens going to the same point: how many couriers, and each one's fee. */
+  async groupQuote(ks: Kitchen[], toLat: number, toLng: number) {
+    const s = await this.feeSettings();
+    const base = { extraStopFee: s.extraStop, groupMaxKm: s.groupMaxKm };
+    if (!ks.length) return { km: 0, fee: 0, mode: 'courier' as const, couriers: 0, runs: [], fees: {}, ...base };
+    const runs = FoodService.splitByCourier(ks, (k) => k, s.groupMaxKm);
+    const parts = await Promise.all(runs.map((r) => this.runQuote(r, toLat, toLng, s.extraStop)));
+    // Per kitchen, as the orders will carry it: the first of each run pays that run's fee.
+    const fees: Record<string, number> = {};
+    runs.forEach((r, i) => r.forEach((k, j) => (fees[k.id] = j === 0 ? parts[i].fee : 0)));
+    return {
+      km: Math.max(...parts.map((p) => p.km)),
+      fee: parts.reduce((sum, p) => sum + p.fee, 0),
+      mode: parts.some((p) => p.mode === 'taxi') ? ('taxi' as const) : ('courier' as const),
+      couriers: runs.length,
+      runs: runs.map((r, i) => ({ kitchenIds: r.map((k) => k.id), ...parts[i] })),
+      fees,
+      ...base,
     };
   }
 
@@ -410,15 +467,23 @@ export class FoodService implements OnModuleInit {
   }
 
   /**
-   * Spread the group's single delivery fee: the first live order carries it,
-   * the rest get 0; all share one courier mode and need a courier. Skipped
-   * once anything was picked up (the courier is already on the way).
+   * For each courier run of the group: the first live order carries the run's
+   * one fee, the rest get 0; all share one courier mode and need a courier. A
+   * run is left alone once something in it was picked up (its courier is
+   * already on the way).
    */
   private async repriceGroup(any: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>) {
-    const list = await this.groupOrders(any);
-    if (!list.length || list.some((o) => ['PICKED_UP', 'DELIVERED'].includes(o.status))) return list;
+    const { extraStop } = await this.feeSettings();
+    for (const run of await this.groupRuns(any)) {
+      const list = run.filter((x) => GROUP_LIVE.includes(x.status));
+      if (!list.length || list.some((o) => ['PICKED_UP', 'DELIVERED'].includes(o.status))) continue;
+      await this.repriceRun(list, extraStop);
+    }
+  }
+
+  private async repriceRun(list: FoodOrder[], extraStop: number) {
     const lead = list[0];
-    const q = await this.groupQuote(list.map((o) => o.kitchen), Number(lead.lat), Number(lead.lng));
+    const q = await this.runQuote(list.map((o) => o.kitchen), Number(lead.lat), Number(lead.lng), extraStop);
     for (const o of list) {
       const fee = o.id === lead.id ? q.fee : 0;
       const total = Number(o.itemsTotal) + fee;
@@ -437,7 +502,6 @@ export class FoodService implements OnModuleInit {
         await this.orders.update(o.id, { bonusUsed: o.bonusUsed });
       }
     }
-    return list;
   }
 
   /**
@@ -830,7 +894,7 @@ export class FoodService implements OnModuleInit {
     o.prepMinutes = Math.min(180, Math.max(1, Math.round(Number(prepMinutes) || k.prepMinutes)));
     // The kitchen decides per order: platform courier, or its own delivery.
     if (o.deliveryType === 'pickup') o.needsCourier = false;
-    else if ((await this.groupOrders(o)).length > 1) o.needsCourier = true; // one courier collects the whole group
+    else if ((await this.groupOrders(o)).length > 1) o.needsCourier = true; // one courier collects this run of the group
     else if (needsCourier !== undefined) o.needsCourier = !!needsCourier;
     await this.orders.save(o);
     await this.logEvent(o.id, 'kitchen_accepted', null, {
@@ -1395,11 +1459,13 @@ export class FoodService implements OnModuleInit {
     });
     const cfg = await this.dispatchCfg();
     const out: any[] = [];
-    const seenGroups = new Set<string>();
+    // One entry per courier run (a group far apart is two jobs for two couriers).
+    const seenRuns = new Set<string>();
     for (const o of rows) {
       if (o.groupId && o.deliveryType === 'delivery') {
-        if (seenGroups.has(o.groupId)) continue;
-        seenGroups.add(o.groupId);
+        const key = (await this.groupOrders(o))[0]?.id ?? o.id;
+        if (seenRuns.has(key)) continue;
+        seenRuns.add(key);
       }
       if (!this.canTake(driverId, o.id)) continue;
       if (o.courierMode === 'taxi' && d.kind === 'courier') continue;

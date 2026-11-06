@@ -77,8 +77,15 @@ function CheckoutInner() {
   /** Kitchen quotes for the drop-off point: fee, open state, address, coordinates. */
   const [quotes, setQuotes] = useState<Record<string, KitchenInfo>>({});
   const [quoting, setQuoting] = useState(false);
-  /** Several kitchens → one courier collects all: one delivery fee for the group. */
-  const [groupQuote, setGroupQuote] = useState<{ key: string; fee: number; mode: 'courier' | 'taxi'; km: number } | null>(null);
+  /** Several kitchens: nearby ones share a courier and one fee, a far one gets its own courier. */
+  const [groupQuote, setGroupQuote] = useState<{
+    key: string;
+    fee: number;
+    mode: 'courier' | 'taxi';
+    km: number;
+    couriers: number;
+    fees: Record<string, number> | null;
+  } | null>(null);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
   const [allow, setAllow] = useState<Record<string, BonusAllowance>>({});
@@ -143,7 +150,18 @@ function CheckoutInner() {
             .catch(() => null)
         : null;
     if (seq !== quoteSeq.current) return;
-    setGroupQuote(gq ? { key: ids.join(','), fee: Number(gq.fee), mode: gq.mode, km: Number(gq.km) } : null);
+    setGroupQuote(
+      gq
+        ? {
+            key: ids.join(','),
+            fee: Number(gq.fee),
+            mode: gq.mode,
+            km: Number(gq.km),
+            couriers: Math.max(1, Number(gq.couriers) || 1),
+            fees: gq.fees && typeof gq.fees === 'object' ? gq.fees : null,
+          }
+        : null,
+    );
     const next: Record<string, KitchenInfo> = {};
     const gone: string[] = [];
     let failed: unknown = null;
@@ -180,11 +198,15 @@ function CheckoutInner() {
   }, [center.lat, center.lng, idsKey, fetchQuotes]);
 
   const pickup = mode === 'pickup';
-  // Several kitchens: the first order carries the group's one fee (as the server does), the rest 0.
+  // Several kitchens: each courier's first order carries that courier's fee (as the server does), the rest 0.
   const groupFee = groups.length > 1 && groupQuote?.key === idsKey ? groupQuote : null;
   const feeOf = (id: string): number | null => {
     if (pickup) return 0;
-    if (groups.length > 1) return groupFee ? (id === groups[0].kitchen.id ? groupFee.fee : 0) : null;
+    if (groups.length > 1) {
+      if (!groupFee) return null;
+      if (groupFee.fees) return Number(groupFee.fees[id] ?? 0);
+      return id === groups[0].kitchen.id ? groupFee.fee : 0;
+    }
     return quotes[id]?.deliveryFee ?? null;
   };
   const orderTotal = (g: CartGroup) => cartSum(g.lines) + (feeOf(g.kitchen.id) ?? 0);
@@ -289,6 +311,7 @@ function CheckoutInner() {
   const totalAll = itemsAll + feeAll;
   const cashAll = Math.max(0, totalAll - bonusAmt);
   const km = !multi ? rows[0].q?.distanceKm ?? null : groupFee?.km ?? null;
+  const couriers = groupFee?.couriers ?? 1;
   const taxiFee = !pickup && (multi ? groupFee?.mode === 'taxi' : rows.some((r) => r.q?.courierMode === 'taxi'));
 
   const phoneOk = phone.replace(/\D/g, '').length >= 9;
@@ -678,7 +701,9 @@ function CheckoutInner() {
                     {pickup
                       ? 'O‘zim olib ketaman'
                       : multi
-                        ? `Yetkazish · bitta kuryer, ${rows.length} ta oshxona`
+                        ? couriers > 1
+                          ? `Yetkazish · ${couriers} ta kuryer, ${rows.length} ta oshxona`
+                          : `Yetkazish · bitta kuryer, ${rows.length} ta oshxona`
                         : `Yetkazish${km != null ? ` · ${fmtKm(km)}` : ''}`}
                   </span>
                 }
@@ -686,7 +711,9 @@ function CheckoutInner() {
               />
               {multi && !pickup && (
                 <p className="py-2 text-xs text-neutral-500 leading-snug">
-                  Bitta kuryer hamma oshxonadan yig‘ib keladi — yetkazish narxi bir marta olinadi.
+                  {couriers > 1
+                    ? `Oshxonalar bir-biridan uzoq — ${couriers} ta kuryer olib keladi. Yaqin oshxonalarni bitta kuryer yig‘adi, har kuryerning yetkazish narxi alohida.`
+                    : 'Bitta kuryer hamma oshxonadan yig‘ib keladi — yetkazish narxi bir marta olinadi.'}
                 </p>
               )}
               {bonusAmt > 0 && <Row k={<span className="text-emerald-700">Bonusdan to‘lanadi</span>} v={<span className="text-emerald-700">− {money(bonusAmt)} so‘m</span>} />}
