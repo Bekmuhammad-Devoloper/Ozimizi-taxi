@@ -7,7 +7,9 @@ import { ContractGate } from './ContractGate';
 import { AppUpdate } from './AppUpdate';
 import { useDriverSocket } from '@/hooks/useDriverSocket';
 import { useAuthStore } from '@/stores/auth';
-import { useOrderStore } from '@/stores/order';
+import { api } from '@/lib/api';
+import { orderFields } from '@/hooks/useMeter';
+import { useOrderStore, type OrderModel } from '@/stores/order';
 import { isDeliveryLive, syncActiveDelivery, useDeliveryStore } from '@/stores/delivery';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -67,6 +69,35 @@ export function Shell({ children }: { children: React.ReactNode }) {
     deliveryRestoredFor = token;
     void syncActiveDelivery();
   }, [token]);
+
+  // Accepted from the card over other apps (or on another phone): the job
+  // lives on the server, so pick it up whenever the app comes to the front.
+  useEffect(() => {
+    if (!token) return;
+    const sync = async () => {
+      try {
+        const { data } = await api.get('/driver/orders/active');
+        const st = useOrderStore.getState();
+        if (data?.id && st.active?.id !== data.id) {
+          st.resetDistance();
+          st.setActive({ id: data.id, ...orderFields(data) } as OrderModel);
+          if (data.source !== 'street') router.push('/order/active');
+          return;
+        }
+        const before = useDeliveryStore.getState().active?.id ?? null;
+        const d = await syncActiveDelivery();
+        if (isDeliveryLive(d) && d.id !== before) router.push('/delivery/active');
+      } catch {
+        /* offline — next time */
+      }
+    };
+    void sync();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [token, router]);
 
   // The screen must never time out while the app is open — drivers leave it
   // on the dashboard waiting for orders. Re-acquired whenever the app

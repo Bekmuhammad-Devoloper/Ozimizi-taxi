@@ -27,7 +27,7 @@ import com.getcapacitor.annotation.PermissionCallback;
  *   MoviyDriver.stopAlarm({ orderId })     — accepted / declined in the app
  *   MoviyDriver.status()                   — { running }
  *   MoviyDriver.permissionState()          — what the first-start screen still needs
- *   MoviyDriver.askPermission({ kind })    — location | backgroundLocation | notifications | battery
+ *   MoviyDriver.askPermission({ kind })    — location | backgroundLocation | notifications | battery | overlay | fullScreen | autostart
  *   MoviyDriver.openAppSettings()          — for a permission denied for good
  */
 @CapacitorPlugin(
@@ -141,6 +141,18 @@ public class MoviyDriverPlugin extends Plugin {
                     call.resolve(permissions());
                 }
                 return;
+            case "overlay":
+                openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, true);
+                call.resolve(permissions());
+                return;
+            case "fullScreen":
+                openSettings("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT", true);
+                call.resolve(permissions());
+                return;
+            case "autostart":
+                openAutostart();
+                call.resolve(permissions());
+                return;
             case "battery":
                 try {
                     Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -167,6 +179,55 @@ public class MoviyDriverPlugin extends Plugin {
     public void openAppSettings(PluginCall call) {
         openAppSettingsNow();
         call.resolve();
+    }
+
+    private void openSettings(String action, boolean withPackage) {
+        try {
+            Intent i = new Intent(action);
+            if (withPackage) i.setData(Uri.parse("package:" + getContext().getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        } catch (Exception e) {
+            openAppSettingsNow();
+        }
+    }
+
+    // Phone makers' own "autostart" screens: without this they kill background apps.
+    private static final String[][] AUTOSTART = {
+        {"com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"},
+        {"com.letv.android.letvsafe", "com.letv.android.letvsafe.AutobootManageActivity"},
+        {"com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+        {"com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"},
+        {"com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"},
+        {"com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"},
+        {"com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"},
+        {"com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"},
+        {"com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"},
+        {"com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"},
+        {"com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"},
+        {"com.asus.mobilemanager", "com.asus.mobilemanager.entry.FunctionActivity"},
+    };
+
+    private boolean autostartScreenExists() {
+        for (String[] c : AUTOSTART) {
+            Intent i = new Intent().setClassName(c[0], c[1]);
+            if (getContext().getPackageManager().resolveActivity(i, 0) != null) return true;
+        }
+        return false;
+    }
+
+    private void openAutostart() {
+        for (String[] c : AUTOSTART) {
+            try {
+                Intent i = new Intent().setClassName(c[0], c[1]).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (getContext().getPackageManager().resolveActivity(i, 0) == null) continue;
+                getContext().startActivity(i);
+                return;
+            } catch (Exception ignored) {
+                // this phone guards that screen — try the next one
+            }
+        }
+        openAppSettingsNow();
     }
 
     private void openAppSettingsNow() {
@@ -207,6 +268,14 @@ public class MoviyDriverPlugin extends Plugin {
             battery = pm == null || pm.isIgnoringBatteryOptimizations(ctx.getPackageName());
         }
         r.put("battery", battery);
+        r.put("overlay", OrderOverlay.allowed(ctx));
+        boolean fullScreen = true;
+        if (Build.VERSION.SDK_INT >= 34) {
+            android.app.NotificationManager nm = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            fullScreen = nm == null || nm.canUseFullScreenIntent();
+        }
+        r.put("fullScreen", fullScreen);
+        r.put("autostartScreen", autostartScreenExists());
         r.put("androidSdk", Build.VERSION.SDK_INT);
         return r;
     }

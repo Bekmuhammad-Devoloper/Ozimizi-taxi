@@ -46,14 +46,17 @@ import java.nio.charset.StandardCharsets;
  *
  *  - long-polls GET /driver/inbox (25 s) for new orders and other events;
  *  - on a new order: 15 s loud alarm (looping chime on the alarm stream +
- *    vibration + heads-up notification that opens the app);
+ *    vibration) + the order card over other apps with Accept / Decline
+ *    (heads-up / full-screen notification when that can't be drawn or the
+ *    screen is locked);
  *  - sends GPS to PATCH /driver/location every ~10 s while the app is in the
  *    background (in the foreground the web app's socket does it);
  *  - stops itself when the server says the driver went offline, on 401, or
  *    when the app calls MoviyDriver.stop() (driver pressed "Liniyadan chiqish").
  *
  * The JWT and API base are kept in SharedPreferences so a sticky restart
- * after the process was killed can resume.
+ * after the process was killed can resume; OnlineRestartReceiver brings the
+ * service back after a reboot, a swipe or a kill while the driver is online.
  */
 public class DriverOnlineService extends Service {
     private static final String TAG = "MoviyOnline";
@@ -83,6 +86,16 @@ public class DriverOnlineService extends Service {
     private String ringingOrderId;
     private Runnable alarmTimeout;
     private Runnable vibrateLoop;
+    private OrderOverlay overlay;
+    private PowerManager.WakeLock screenLock;
+
+    private static volatile DriverOnlineService instance;
+
+    /** The app came to the front: its own offer dialog takes over from the card. */
+    static void onAppForeground() {
+        DriverOnlineService s = instance;
+        if (s != null) s.main.post(s::hideOverlay);
+    }
 
     // ---------------------------------------------------------------- life
 
@@ -96,6 +109,7 @@ public class DriverOnlineService extends Service {
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_STOP.equals(action)) {
             prefs().edit().putBoolean("online", false).apply();
+            OnlineRestartReceiver.cancel(this);
             stopEverything();
             return START_NOT_STICKY;
         }
@@ -121,6 +135,8 @@ public class DriverOnlineService extends Service {
             return START_NOT_STICKY;
         }
         running = true;
+        instance = this;
+        OnlineRestartReceiver.scheduleRegular(this);
         acquireWakeLock();
         startLocation();
         startPolling();
@@ -129,17 +145,24 @@ public class DriverOnlineService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // App swiped away — keep working while the driver is online.
+        // App swiped away — keep working while the driver is online. Some phones
+        // kill the service with the task, so a restart is booked just in case.
+        if (prefs().getBoolean("online", false)) OnlineRestartReceiver.schedule(this, 3000);
         super.onTaskRemoved(rootIntent);
     }
 
     @Override
     public void onDestroy() {
+        // Stopped on purpose (or could not start) = running already false: no quick retry.
+        boolean wasRunning = running;
         polling = false;
         running = false;
         stopAlarm(null);
         stopLocation();
         releaseWakeLock();
+        instance = null;
+        // Killed by the system while online → come back.
+        if (wasRunning && prefs().getBoolean("online", false)) OnlineRestartReceiver.schedule(this, 5000);
         super.onDestroy();
     }
 
@@ -218,16 +241,18 @@ public class DriverOnlineService extends Service {
     private boolean goForeground() {
         ensureChannels();
         Notification n = onlineNotification();
-        try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                int type = hasLocationPermission()
-                    ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                    : (Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0);
-                if (type != 0) startForeground(NOTIF_ONLINE, n, type);
-                else startForeground(NOTIF_ONLINE, n);
-            } else {
-                startForeground(NOTIF_ONLINE, n);
+        if (Build.VERSION.SDK_INT >= 29 && hasLocationPermission()) {
+            try {
+                startForeground(NOTIF_ONLINE, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+                return true;
+            } catch (Exception e) {
+                // Restarted from the background: "location" may be refused.
+                Log.w(TAG, "location foreground refused: " + e);
             }
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIF_ONLINE, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            else startForeground(NOTIF_ONLINE, n);
             return true;
         } catch (Exception e) {
             Log.w(TAG, "startForeground failed: " + e);
@@ -258,13 +283,20 @@ public class DriverOnlineService extends Service {
 
     // ----------------------------------------------------------------- alarm
 
-    private void startAlarm(final String orderId, int seconds, String title, String body) {
+    private void startAlarm(final String orderId, int seconds, String title, String body, final JSONObject offer) {
         main.post(() -> {
             stopAlarmInternal();
             ringingOrderId = orderId;
             int secs = Math.max(5, Math.min(60, seconds));
 
-            if (!appInForeground) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            boolean screenOn = pm == null || pm.isInteractive();
+            if (!screenOn) wakeScreen(pm, secs);
+            boolean cardShown = !appInForeground && showOverlay(orderId, secs, title, offer);
+
+            // Card on an unlocked screen is enough; otherwise the notification
+            // (full-screen on a locked phone) opens the app over the lock screen.
+            if (!appInForeground && !(cardShown && screenOn)) {
                 NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 if (nm != null) {
                     PendingIntent open = openAppIntent(orderId);
@@ -334,7 +366,105 @@ public class DriverOnlineService extends Service {
         });
     }
 
+    private String clean(JSONObject o, String key) {
+        if (o == null) return "";
+        String s = o.optString(key, "");
+        return "null".equals(s) ? "" : s;
+    }
+
+    private boolean showOverlay(final String orderId, int secs, String title, final JSONObject p) {
+        if (!OrderOverlay.allowed(this)) return false;
+        if (overlay == null) overlay = new OrderOverlay(getApplicationContext());
+        final String kind = clean(p, "kind");
+        String from = clean(p.optJSONObject("pickup"), "address");
+        String to = clean(p.optJSONObject("destination"), "address");
+        StringBuilder meta = new StringBuilder(String.format(java.util.Locale.US, "%.1f km uzoqlikda", p.optDouble("distanceFromDriver", 0)));
+        double price = p.optDouble("estimatedPrice", 0);
+        if (price > 0) {
+            meta.append(String.format(java.util.Locale.US, " · ~%,.0f so‘m", price).replace(',', ' '));
+        }
+        return overlay.show(title, from, to, meta.toString(), secs, new OrderOverlay.Actions() {
+            @Override
+            public void accept() {
+                acceptFromOverlay(orderId, kind);
+            }
+
+            @Override
+            public void decline() {
+                stopAlarm(orderId);
+                new Thread(() -> request("POST", "/driver/orders/" + orderId + "/decline", "{}", 10_000)).start();
+            }
+        });
+    }
+
+    private void acceptFromOverlay(final String orderId, final String kind) {
+        if (overlay != null) overlay.showNote("Qabul qilinmoqda…");
+        // The sound stops at once; the card stays until the answer comes.
+        main.post(this::silenceAlarm);
+        final String path = "delivery".equals(kind)
+            ? "/driver/deliveries/" + orderId + "/accept"
+            : "/driver/orders/" + orderId + "/accept";
+        new Thread(() -> {
+            Response r = request("POST", path, "{}", 15_000);
+            main.post(() -> {
+                if (r.code >= 200 && r.code < 300) {
+                    stopAlarmInternal();
+                    openApp(orderId);
+                    return;
+                }
+                String msg = "Qabul qilib bo‘lmadi";
+                try {
+                    if (r.body != null) msg = new JSONObject(r.body).optString("message", msg);
+                } catch (Exception ignored) {
+                }
+                if (overlay != null) overlay.showNote(msg);
+                main.postDelayed(this::stopAlarmInternal, 2500);
+            });
+        }).start();
+    }
+
+    private void openApp(String orderId) {
+        try {
+            Intent i = new Intent(this, MainActivity.class);
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            i.putExtra("orderId", orderId);
+            startActivity(i);
+        } catch (Exception e) {
+            Log.w(TAG, "open app failed: " + e);
+        }
+    }
+
+    private void hideOverlay() {
+        if (overlay != null) overlay.hide();
+    }
+
+    /** The screen is off: light it up for as long as the offer rings. */
+    private void wakeScreen(PowerManager pm, int secs) {
+        try {
+            if (screenLock != null && screenLock.isHeld()) screenLock.release();
+            screenLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "MoviyTaxi:order");
+            screenLock.setReferenceCounted(false);
+            screenLock.acquire(secs * 1000L);
+        } catch (Exception e) {
+            Log.w(TAG, "wake screen failed: " + e);
+        }
+    }
+
     private void stopAlarmInternal() {
+        hideOverlay();
+        try {
+            if (screenLock != null && screenLock.isHeld()) screenLock.release();
+        } catch (Exception ignored) {
+        }
+        silenceAlarm();
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancel(NOTIF_ALARM);
+        ringingOrderId = null;
+    }
+
+    private void silenceAlarm() {
         if (alarmTimeout != null) main.removeCallbacks(alarmTimeout);
         if (vibrateLoop != null) main.removeCallbacks(vibrateLoop);
         alarmTimeout = null;
@@ -352,9 +482,6 @@ public class DriverOnlineService extends Service {
             player.release();
             player = null;
         }
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm != null) nm.cancel(NOTIF_ALARM);
-        ringingOrderId = null;
     }
 
     // --------------------------------------------------------------- polling
@@ -395,7 +522,11 @@ public class DriverOnlineService extends Service {
                 }
                 boolean firstSync = after == null;
                 after = j.optLong("last", after == null ? 0 : after);
-                if (firstSync) continue;
+                if (firstSync) {
+                    // Just (re)started: an offer may already be ringing for this driver.
+                    resumeCurrentOffer();
+                    continue;
+                }
                 JSONArray events = j.optJSONArray("events");
                 if (events == null) continue;
                 for (int k = 0; k < events.length(); k++) handleEvent(events.getJSONObject(k));
@@ -405,23 +536,40 @@ public class DriverOnlineService extends Service {
         }
     }
 
+    private void resumeCurrentOffer() {
+        if (appInForeground) return;
+        Response r = request("GET", "/driver/offers/current", null, 15_000);
+        if (r.code != 200 || r.body == null || r.body.isEmpty() || "null".equals(r.body)) return;
+        try {
+            JSONObject p = new JSONObject(r.body);
+            if (p.optString("orderId", "").isEmpty()) return;
+            ringOffer(p, p.optInt("remainingSeconds", p.optInt("offerSeconds", 15)));
+        } catch (Exception e) {
+            Log.w(TAG, "bad current offer: " + e);
+        }
+    }
+
+    private void ringOffer(JSONObject p, int seconds) {
+        String orderId = p.optString("orderId");
+        boolean all = "all".equals(p.optString("mode"));
+        boolean delivery = "delivery".equals(p.optString("kind"));
+        double km = p.optDouble("distanceFromDriver", 0);
+        String addr = clean(p.optJSONObject("pickup"), "address");
+        String title = delivery
+            ? (all ? "🍽 Yetkazish hammaga — tez oling!" : "🍽 Yetkazish sizga!")
+            : (all ? "🚕 Buyurtma hammaga — tez oling!" : "🚕 Yangi buyurtma sizga!");
+        String body = String.format(java.util.Locale.US, "%.1f km uzoqlikda%s — %d soniya ichida qabul qiling",
+            km, addr.isEmpty() ? "" : " · " + addr, seconds);
+        startAlarm(orderId, seconds, title, body, p);
+    }
+
     private void handleEvent(JSONObject e) {
         String event = e.optString("event");
         JSONObject p = e.optJSONObject("payload");
         if (p == null) p = new JSONObject();
         switch (event) {
             case "new_order": {
-                String orderId = p.optString("orderId");
-                int seconds = p.optInt("offerSeconds", 15);
-                boolean all = "all".equals(p.optString("mode"));
-                double km = p.optDouble("distanceFromDriver", 0);
-                JSONObject pickup = p.optJSONObject("pickup");
-                String addr = pickup != null ? pickup.optString("address", "") : "";
-                if ("null".equals(addr)) addr = "";
-                String title = all ? "🚕 Buyurtma hammaga — tez oling!" : "🚕 Yangi buyurtma sizga!";
-                String body = String.format(java.util.Locale.US, "%.1f km uzoqlikda%s — %d soniya ichida qabul qiling",
-                    km, addr.isEmpty() ? "" : " · " + addr, seconds);
-                startAlarm(orderId, seconds, title, body);
+                ringOffer(p, p.optInt("offerSeconds", 15));
                 break;
             }
             case "order_offer_expired":

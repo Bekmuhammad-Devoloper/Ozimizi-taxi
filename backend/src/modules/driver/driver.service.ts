@@ -99,6 +99,10 @@ export class DriverService {
     return this.orderService.accept(driverId, orderId);
   }
 
+  activeOrder(driverId: string) {
+    return this.orderService.activeForDriver(driverId);
+  }
+
   declineOrder(driverId: string, orderId: string) {
     return this.orderService.declineOffer(driverId, orderId);
   }

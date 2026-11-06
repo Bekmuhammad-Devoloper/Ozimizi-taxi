@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { BatteryCharging, Bell, Check, MapPin, Navigation, Settings } from 'lucide-react';
+import { BatteryCharging, Bell, Check, Layers, Lock, MapPin, Navigation, Power, Settings } from 'lucide-react';
 import { AuthShell } from './AuthShell';
 import {
   PermKind,
@@ -14,7 +14,7 @@ import {
 // Shown once per app start: after "Davom etish" the session does not ask again.
 const SESSION_KEY = 'moviy-perms-seen';
 
-const STEPS: { kind: PermKind; icon: React.ReactNode; title: string; why: string }[] = [
+const STEPS: { kind: PermKind; icon: React.ReactNode; title: string; why: string; hideUnknown?: boolean }[] = [
   {
     kind: 'location',
     icon: <MapPin size={20} />,
@@ -38,6 +38,26 @@ const STEPS: { kind: PermKind; icon: React.ReactNode; title: string; why: string
     icon: <BatteryCharging size={20} />,
     title: 'Batareya cheklovini o‘chirish',
     why: 'Telefon ilovani uxlatib qo‘ymasligi — buyurtmalar uzilmay kelishi uchun',
+  },
+  {
+    kind: 'overlay',
+    icon: <Layers size={20} />,
+    title: 'Boshqa ilovalar ustida ko‘rsatish',
+    why: 'Boshqa ilovada yoki bosh ekranda bo‘lsangiz ham buyurtma ekranga chiqadi',
+  },
+  {
+    kind: 'fullScreen',
+    icon: <Lock size={20} />,
+    title: 'Qulflangan ekranda ko‘rsatish',
+    why: 'Telefon qulflangan bo‘lsa ham buyurtma ekranda ochiladi',
+    hideUnknown: true,
+  },
+  {
+    kind: 'autostart',
+    icon: <Power size={20} />,
+    title: 'Avtozapusk',
+    why: 'Ochilgan oynada Moviy Taxi’ni yoqing — telefon ilovani o‘chirib qo‘ymasligi uchun',
+    hideUnknown: true,
   },
 ];
 
@@ -116,6 +136,7 @@ export function PermissionGate({ onDone }: { onDone: () => void }) {
         <div className="mt-5 space-y-2.5">
           {STEPS.map((s) => {
             const v = st ? st[s.kind] : null;
+            if (s.hideUnknown && v === null) return null;
             const ok = v === true;
             const unknown = v === null;
             const wasAsked = asked.includes(s.kind);

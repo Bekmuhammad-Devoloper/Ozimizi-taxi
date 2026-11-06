@@ -326,11 +326,20 @@ export function compareVersions(a: string, b: string): number | null {
 
 // ---- first-start permissions (shown before the phone/password form) ---------
 
-export type PermKind = 'location' | 'backgroundLocation' | 'notifications' | 'battery';
+export type PermKind =
+  | 'location'
+  | 'backgroundLocation'
+  | 'notifications'
+  | 'battery'
+  | 'overlay'
+  | 'fullScreen'
+  | 'autostart';
 /** true granted · false missing · null this APK cannot tell (older build). */
 export type PermState = Record<PermKind, boolean | null>;
 
 const GEO_OK_KEY = 'moviy-geo-ok';
+// Android can't tell whether "autostart" is on: opening its screen once counts.
+const AUTOSTART_KEY = 'moviy-autostart-asked';
 
 /** Does the installed APK's MoviyDriver plugin really have this method? */
 function pluginHas(method: string): boolean {
@@ -343,7 +352,9 @@ function pluginHas(method: string): boolean {
 }
 
 export async function permissionState(): Promise<PermState> {
-  if (!isNativeApp()) return { location: true, backgroundLocation: true, notifications: true, battery: true };
+  if (!isNativeApp()) {
+    return { location: true, backgroundLocation: true, notifications: true, battery: true, overlay: true, fullScreen: true, autostart: true };
+  }
   if (pluginHas('permissionState')) {
     try {
       const r = await driverPlugin().permissionState();
@@ -352,6 +363,10 @@ export async function permissionState(): Promise<PermState> {
         backgroundLocation: !!r?.backgroundLocation,
         notifications: !!r?.notifications,
         battery: !!r?.battery,
+        // APK ≤ 1.0.7 does not know these.
+        overlay: r?.overlay === undefined ? null : !!r.overlay,
+        fullScreen: r?.fullScreen === undefined ? null : !!r.fullScreen,
+        autostart: !r?.autostartScreen ? null : localStorage.getItem(AUTOSTART_KEY) === '1',
       };
     } catch {
       /* fall through to the older-APK checks */
@@ -371,13 +386,14 @@ export async function permissionState(): Promise<PermState> {
   } catch {
     /* storage blocked */
   }
-  return { location: geoOk, backgroundLocation: null, notifications, battery: null };
+  return { location: geoOk, backgroundLocation: null, notifications, battery: null, overlay: null, fullScreen: null, autostart: null };
 }
 
 export async function askPermission(kind: PermKind): Promise<PermState> {
   if (pluginHas('askPermission')) {
     try {
       await driverPlugin().askPermission({ kind });
+      if (kind === 'autostart') localStorage.setItem(AUTOSTART_KEY, '1');
     } catch {
       /* denied — the screen shows the settings button */
     }

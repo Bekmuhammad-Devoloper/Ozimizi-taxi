@@ -196,6 +196,12 @@ export class DriverController {
     return this.drivers.setWaiting(user.sub, id, false);
   }
 
+  /** The taxi order this driver is on now (it may have been accepted outside the web app). */
+  @Get('orders/active')
+  activeOrder(@CurrentUser() user: JwtPayload) {
+    return this.drivers.activeOrder(user.sub);
+  }
+
   @Get('orders/history')
   history(@CurrentUser() user: JwtPayload) {
     return this.drivers.history(user.sub);

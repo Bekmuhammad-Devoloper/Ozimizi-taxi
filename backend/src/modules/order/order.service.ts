@@ -1169,6 +1169,17 @@ export class OrderService {
     });
   }
 
+  async activeForDriver(driverId: string) {
+    const o = await this.orders.findOne({
+      where: [OrderStatus.ACCEPTED, OrderStatus.ON_THE_WAY, OrderStatus.ARRIVED, OrderStatus.IN_PROGRESS].map((status) => ({
+        driverId,
+        status,
+      })),
+      order: { createdAt: 'DESC' },
+    });
+    return o ?? null;
+  }
+
   async findOneForDriver(driverId: string, orderId: string) {
     const order = await this.orders.findOne({
       where: { id: orderId },
