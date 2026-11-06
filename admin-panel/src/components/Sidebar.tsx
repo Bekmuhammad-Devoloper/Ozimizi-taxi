@@ -273,7 +273,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className="dark-scroll flex-1 p-3 space-y-1 overflow-y-auto">
           {items.map(({ href, label, icon: Icon, also }) => {
             // '/kitchen' must not light up on '/kitchen/menu', nor
             // '/coordinator' on '/coordinators'.
