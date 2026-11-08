@@ -83,6 +83,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  /// A recent ride or delivery tapped on the home screen.
+  Future<void> _openRecent(Json o) async {
+    final id = '${o['id']}';
+    if (id.startsWith('delivery-')) {
+      final del = await deliveries.sync();
+      if (!mounted) return;
+      Navigator.pushNamed(context, isDeliveryLive(del) ? '/delivery/active' : '/orders');
+      return;
+    }
+    await openRide(context, o);
+  }
+
   /// Taxi rides + food deliveries (the courier's fee counts as the price).
   List<Json> get _all {
     const statusMap = {'DELIVERED': 'COMPLETED', 'CANCELLED': 'CANCELLED', 'REJECTED': 'CANCELLED', 'PICKED_UP': 'IN_PROGRESS'};
@@ -310,10 +322,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               else
                 for (final o in all.take(3))
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _openRecent(o),
+                    child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: cardBox(),
+                    decoration: cardBox(border: rideStatuses.contains(o['status']) ? const Color(0x803B9BFF) : line),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -329,7 +345,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ]),
                       ),
                       T(numOrNull(o['price']) != null ? money(o['price']) : '—', weight: FontWeight.w600),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, size: 18, color: n400),
                     ]),
+                  ),
+                  ),
                   ),
             ]),
           ),

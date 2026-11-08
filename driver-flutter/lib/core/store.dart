@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -157,6 +158,34 @@ class OrderStore extends ChangeNotifier {
 }
 
 bool isLiveOrder(Json? o) => o != null && o['status'] != 'COMPLETED' && o['status'] != 'CANCELLED';
+
+/// A ride this driver has taken and not finished.
+const rideStatuses = ['ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'IN_PROGRESS'];
+
+/// The ride this driver is on right now, from the server. A server without
+/// /driver/orders/active (older version) answers 404: then the newest ride in
+/// the history that is still going.
+Future<Json?> fetchActiveRide() async {
+  try {
+    final r = await api.get('/driver/orders/active');
+    return asJson(r.data);
+  } on DioException catch (e) {
+    if (e.response?.statusCode != 404) rethrow;
+  }
+  final h = await api.get('/driver/orders/history');
+  for (final x in h.data is List ? h.data as List : const []) {
+    final o = asJson(x);
+    if (o != null && rideStatuses.contains(o['status'])) return o;
+  }
+  return null;
+}
+
+/// Makes a ride the current job (found on the server or opened from a list).
+void adoptRide(Json d) {
+  if (orders.active?['id'] != d['id']) orders.resetDistance();
+  orders.setActive({'id': d['id'], ...orderFields(d)});
+  orders.setIncoming(null);
+}
 
 /// Fields of a server order the app keeps.
 Json orderFields(dynamic d) {

@@ -291,7 +291,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         padding: const EdgeInsets.only(bottom: 8),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => Navigator.pushNamed(context, '/order/detail', arguments: o['id'].toString()),
+          onTap: () => openRide(context, o),
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: cardBox(),

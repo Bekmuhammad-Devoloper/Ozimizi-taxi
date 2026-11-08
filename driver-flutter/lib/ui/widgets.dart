@@ -293,6 +293,27 @@ Future<void> toggleWait(void Function(String?) onError) async {
 
 /// Re-read the active order from the server; an order that ended there is
 /// always taken. Returns the server order (with `client`).
+/// Opens a ride from a list. One still going becomes the current job and opens
+/// to work on (it may have been accepted from the card over other apps while
+/// the app was closed); a finished one opens its details.
+Future<void> openRide(BuildContext context, Json o) async {
+  final id = '${o['id']}';
+  final nav = Navigator.of(context);
+  if (rideStatuses.contains(o['status'])) {
+    try {
+      final d = asJson((await api.get('/driver/orders/$id')).data);
+      if (d != null && rideStatuses.contains(d['status'])) {
+        adoptRide({...d, 'id': d['id'] ?? id});
+        nav.pushNamed(d['source'] == 'street' ? '/taximeter' : '/order/active');
+        return;
+      }
+    } catch (_) {
+      // offline — the details screen still shows what is known
+    }
+  }
+  nav.pushNamed('/order/detail', arguments: id);
+}
+
 Future<Json?> syncActiveOrder(String id) async {
   final statusBefore = orders.active?['id'] == id ? orders.active!['status'] : null;
   try {

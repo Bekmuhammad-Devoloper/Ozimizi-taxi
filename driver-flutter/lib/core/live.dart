@@ -208,12 +208,9 @@ class Live with WidgetsBindingObserver {
   Future<void> _syncJobs() async {
     if (auth.token == null) return;
     try {
-      final r = await api.get('/driver/orders/active');
-      final d = asJson(r.data);
+      final d = await fetchActiveRide();
       if (d?['id'] != null && orders.active?['id'] != d!['id']) {
-        orders.resetDistance();
-        orders.setActive({'id': d['id'], ...orderFields(d)});
-        orders.setIncoming(null);
+        adoptRide(d);
         goTo(d['source'] == 'street' ? '/taximeter' : '/order/active');
         return;
       }

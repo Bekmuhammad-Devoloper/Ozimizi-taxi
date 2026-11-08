@@ -386,6 +386,44 @@ void main() {
     await _end(t);
   });
 
+  testWidgets('a ride accepted while the app was closed opens from the home screen', (t) async {
+    // The app does not know the ride, and the server is an older one without
+    // /driver/orders/active (404 here): the ride is found in the history.
+    orders.setActive(null);
+    final ride = _order('ACCEPTED');
+    fake.routes['GET /driver/orders/history'] = [ride];
+    fake.routes['GET /driver/orders/${ride['id']}'] = ride;
+    final found = await t.runAsync(fetchActiveRide);
+    expect(found?['id'], ride['id']);
+
+    await _show(t, const DashboardScreen());
+    expect(orders.active, isNull);
+    await t.tap(find.text('QABUL'));
+    // The ride is fetched, then the screen opens: a few frames.
+    for (var i = 0; i < 6; i++) {
+      await t.pump(const Duration(milliseconds: 200));
+    }
+    expect(orders.active?['id'], ride['id'], reason: 'tapped ride became the current job');
+    expect(find.byType(ActiveOrderScreen), findsOneWidget);
+    expect(find.text('Yo‘lga chiqdim'), findsOneWidget);
+    await _end(t);
+
+    // A finished ride opens its details instead.
+    orders.setActive(null);
+    final done = _order('COMPLETED', {'price': '25000.00'});
+    fake.routes['GET /driver/orders/history'] = [done];
+    fake.routes['GET /driver/orders/${done['id']}'] = done;
+    fake.routes['GET /driver/deliveries/history'] = [];
+    await _show(t, const DashboardScreen());
+    await t.tap(find.text('BAJARILDI'));
+    for (var i = 0; i < 6; i++) {
+      await t.pump(const Duration(milliseconds: 200));
+    }
+    expect(orders.active, isNull);
+    expect(find.byType(OrderDetailScreen), findsOneWidget);
+    await _end(t);
+  });
+
   testWidgets('giving the order back returns to home', (t) async {
     const id = 'aaaaaaaa-1111-2222-3333-444444444444';
     orders.setActive(_order('ON_THE_WAY'));
