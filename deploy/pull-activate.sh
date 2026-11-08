@@ -121,7 +121,8 @@ if [ "$WITH_APK" = "apk" ]; then
     # Same as above: each attempt continues what is on disk. A missing file (404) is final.
     rm -f "$DIR/apk/$f.part"; rc=1
     for i in $(seq 1 40); do
-      curl -4 -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 -C - -o "$DIR/apk/$f.part" "$BASE/apk/$f"; rc=$?
+      # "|| rc=$?": under set -e a bare failing curl would end the whole script here.
+      rc=0; curl -4 -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 60 -C - -o "$DIR/apk/$f.part" "$BASE/apk/$f" || rc=$?
       [ "$rc" = 0 ] || [ "$rc" = 22 ] && break
       sleep 5
     done

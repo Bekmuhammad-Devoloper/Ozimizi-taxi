@@ -20,7 +20,7 @@ import { AnnouncementCard } from '@/components/AnnouncementCard';
 import { DriverInfo, useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
-import { meterSession } from '@/hooks/useMeter';
+import { meterSession, orderFields } from '@/hooks/useMeter';
 import { OrderModel, OrderStatus, useOrderStore } from '@/stores/order';
 import {
   DeliveryView,
@@ -28,6 +28,7 @@ import {
   useDeliveryStore,
 } from '@/stores/delivery';
 import { FitText } from '@/components/FitText';
+import { RIDE_STATUSES } from '@/lib/activeRide';
 
 export default function DashboardPage() {
   return (
@@ -93,6 +94,31 @@ function DashboardInner() {
 
   const todayStats = useMemo(() => computeToday(allOrders), [allOrders]);
   const yesterdayStats = useMemo(() => computeYesterday(allOrders), [allOrders]);
+
+  // A recent ride tapped: one still going becomes the current job (it may have
+  // been accepted from the card over other apps); a finished one shows details.
+  const openRecent = async (o: { id: string; status: string; deliveryNo?: number | null }) => {
+    const id = String(o.id);
+    if (id.startsWith('delivery-') || o.deliveryNo != null) {
+      router.push(isDeliveryLive(useDeliveryStore.getState().active) ? '/delivery/active' : '/orders');
+      return;
+    }
+    if (RIDE_STATUSES.includes(o.status)) {
+      try {
+        const { data } = await api.get(`/driver/orders/${id}`);
+        if (data && RIDE_STATUSES.includes(data.status)) {
+          const st = useOrderStore.getState();
+          if (st.active?.id !== data.id) st.resetDistance();
+          st.setActive({ id: data.id ?? id, ...orderFields(data) } as OrderModel);
+          router.push(data.source === 'street' ? '/taximeter' : '/order/active');
+          return;
+        }
+      } catch {
+        /* offline — show the details */
+      }
+    }
+    router.push(`/order/${id}`);
+  };
   const weekStats = useMemo(() => computeWeek(allOrders), [allOrders]);
 
   const toggle = async () => {
@@ -389,7 +415,13 @@ function DashboardInner() {
                 {allOrders.slice(0, 3).map((o) => (
                   <li
                     key={o.id}
-                    className="bg-white border border-line rounded-2xl p-4"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void openRecent(o)}
+                    className={
+                      'bg-white border rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-transform ' +
+                      (RIDE_STATUSES.includes(o.status) ? 'border-gold/50' : 'border-line')
+                    }
                   >
                     <div className="flex justify-between items-start">
                       <div>
@@ -403,8 +435,9 @@ function DashboardInner() {
                           {fmtDateTime(o.createdAt)}
                         </p>
                       </div>
-                      <p className="text-sm font-semibold tabular-nums">
+                      <p className="text-sm font-semibold tabular-nums flex items-center gap-1">
                         {o.price ? fmt(o.price) + ' so‘m' : '—'}
+                        <ChevronRight size={16} className="text-neutral-400" />
                       </p>
                     </div>
                   </li>

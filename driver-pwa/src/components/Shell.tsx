@@ -21,6 +21,7 @@ import {
   isNativeApp,
   setupNativeNotifications,
 } from '@/lib/native';
+import { fetchActiveRide } from '@/lib/activeRide';
 
 // The active food delivery is re-read from the server once per app load
 // (per account), so it is restored after a reinstall / on another phone.
@@ -76,7 +77,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (!token) return;
     const sync = async () => {
       try {
-        const { data } = await api.get('/driver/orders/active');
+        const data = await fetchActiveRide();
         const st = useOrderStore.getState();
         if (data?.id && st.active?.id !== data.id) {
           st.resetDistance();
