@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Instagram, MessageCircle, Wallet, Gift, Crown, Sparkles, Ban, FileSignature, UtensilsCrossed } from 'lucide-react';
+import { Save, Instagram, MessageCircle, Wallet, Gift, Crown, Sparkles, Ban, FileSignature, UtensilsCrossed, Plus, Trash2 } from 'lucide-react';
 import { Shell } from '@/components/Shell';
 import { api } from '@/lib/api';
 
@@ -34,6 +34,8 @@ interface SettingsMap {
   delivery_commission_percent: string;
   delivery_extra_stop_fee: string;
   delivery_group_max_km: string;
+  /** JSON: [{ "uptoKm": 0.5, "fee": 3000 }, …] */
+  delivery_group_tiers: string;
 }
 
 /** Backend defaults used while a delivery key is left empty. */
@@ -75,6 +77,7 @@ const EMPTY: SettingsMap = {
   delivery_commission_percent: '',
   delivery_extra_stop_fee: '',
   delivery_group_max_km: '',
+  delivery_group_tiers: '',
 };
 
 const BUTTON_ICONS: { key: keyof SettingsMap; label: string }[] = [
@@ -366,6 +369,134 @@ export default function SettingsPage() {
   );
 }
 
+interface TierRow {
+  uptoKm: string;
+  fee: string;
+}
+
+function readTiers(raw: string): TierRow[] {
+  try {
+    const rows = JSON.parse(raw || '[]');
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({ uptoKm: String(r?.uptoKm ?? ''), fee: String(r?.fee ?? '') }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Steps for one courier collecting a client's orders from several kitchens:
+ * the extra fee depends on how far each next kitchen is (e.g. up to 0.5 km
+ * +3 000, up to 1 km +5 000). Beyond the last step: a courier of its own.
+ */
+function GroupTiersEditor({
+  value,
+  onChange,
+  flatFee,
+  flatKm,
+  flatFields,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  flatFee: number;
+  flatKm: number;
+  flatFields: React.ReactNode;
+}) {
+  const rows = readTiers(value);
+  const save = (next: TierRow[]) =>
+    onChange(next.length ? JSON.stringify(next.map((r) => ({ uptoKm: r.uptoKm, fee: r.fee }))) : '');
+  const set = (i: number, patch: Partial<TierRow>) => save(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const valid = rows
+    .map((r) => ({ km: Number(r.uptoKm), fee: Number(r.fee) }))
+    .filter((r) => r.km > 0 && r.fee >= 0 && Number.isFinite(r.km) && Number.isFinite(r.fee))
+    .sort((a, b) => a.km - b.km);
+  const f = (n: number) => n.toLocaleString('uz');
+  const maxKm = valid.length ? valid[valid.length - 1].km : flatKm;
+
+  return (
+    <div className="mt-2 mb-4 rounded-2xl border border-line p-3.5">
+      <p className="text-sm font-bold">Bir nechta oshxona — bitta kuryer</p>
+      <p className="text-xs text-neutral-500 mt-1 mb-3 leading-relaxed">
+        Mijoz 2 yoki undan ortiq oshxonadan buyurtma bersa, oshxonalar orasidagi masofaga qarab{' '}
+        <b>bitta kuryer</b> hammasini yig‘ib keladi. Yetkazish = eng uzoq oshxona narxi +{' '}
+        <b>har keyingi oshxona uchun pog‘ona narxi</b> (oldingi oshxonagacha masofa bo‘yicha).{' '}
+        <b>{f(maxKm)} km</b> dan uzoq oshxonaga <b>alohida kuryer</b> boradi.
+      </p>
+
+      {rows.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {rows.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm">
+              <input
+                value={r.uptoKm}
+                onChange={(e) => set(i, { uptoKm: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) })}
+                inputMode="decimal"
+                placeholder="0.5"
+                className="input tabular-nums w-24"
+                aria-label="km gacha"
+              />
+              <span className="text-neutral-500 shrink-0">km gacha</span>
+              <span className="text-neutral-400 shrink-0">+</span>
+              <input
+                value={r.fee}
+                onChange={(e) => set(i, { fee: e.target.value.replace(/[^\d]/g, '').slice(0, 7) })}
+                inputMode="numeric"
+                placeholder="3000"
+                className="input tabular-nums flex-1 min-w-0"
+                aria-label="qo‘shimcha so‘m"
+              />
+              <span className="text-neutral-500 shrink-0">so‘m</span>
+              <button
+                type="button"
+                onClick={() => save(rows.filter((_, j) => j !== i))}
+                className="w-9 h-9 shrink-0 rounded-lg border border-line text-red-600 flex items-center justify-center hover:bg-red-50"
+                aria-label="Pog‘onani o‘chirish"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          const last = valid[valid.length - 1];
+          save([
+            ...rows,
+            last
+              ? { uptoKm: String(Math.round((last.km + 0.5) * 10) / 10), fee: String(last.fee + 2000) }
+              : { uptoKm: '0.5', fee: '3000' },
+          ]);
+        }}
+        className="btn-secondary h-9 text-xs"
+      >
+        <Plus size={14} /> Pog‘ona qo‘shish
+      </button>
+
+      {valid.length > 0 ? (
+        <div className="mt-3 rounded-xl bg-neutral-50 border border-line p-3 text-xs text-neutral-600 space-y-1">
+          <p className="font-semibold text-neutral-700">Hisob:</p>
+          {valid.map((t, i) => (
+            <p key={i} className="tabular-nums">
+              Keyingi oshxona {i === 0 ? '0' : f(valid[i - 1].km)}–{f(t.km)} km uzoqlikda → <b>+{f(t.fee)} so‘m</b>
+            </p>
+          ))}
+          <p>{f(maxKm)} km dan uzoq → alohida kuryer, alohida yetkazish haqi</p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <p className="text-xs text-neutral-500 mb-1">
+            Pog‘ona qo‘shilmagan: oshxonalar {f(flatKm)} km gacha bo‘lsa har qo‘shimcha oshxona uchun{' '}
+            {f(flatFee)} so‘m qo‘shiladi.
+          </p>
+          {flatFields}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Effective value of a delivery key (empty / invalid → backend default). */
 function deliveryValue(form: SettingsMap, key: keyof typeof DELIVERY_DEFAULTS): number {
   const raw = (form[key] ?? '').trim();
@@ -416,17 +547,19 @@ function DeliverySection({
         {numField('delivery_free_km', 'Bepul km (shu masofagacha qo‘shimcha yo‘q)', true)}
         {numField('delivery_per_km', "Har qo‘shimcha 1 km (so'm)")}
         {numField('delivery_commission_percent', 'Kuryer komissiyasi (%)', true)}
-        {numField('delivery_extra_stop_fee', "Har qo‘shimcha oshxona uchun (so'm)")}
-        {numField('delivery_group_max_km', 'Bitta kuryer uchun oshxonalar orasidagi eng ko‘p masofa (km)', true)}
       </div>
-      <p className="text-xs text-neutral-500 mb-3">
-        Mijoz bir nechta oshxonadan buyurtma bersa: oshxonalar bir-biridan{' '}
-        <b>{f(deliveryValue(form, 'delivery_group_max_km'))} km</b> gacha uzoqlikda bo‘lsa,{' '}
-        <b>bitta kuryer</b> hammasini yig‘ib keladi va yetkazish bir marta olinadi:{' '}
-        <b>eng uzoq oshxona narxi + har qo‘shimcha oshxona uchun</b>{' '}
-        {f(deliveryValue(form, 'delivery_extra_stop_fee'))} so‘m. Undan uzoqroq oshxonaga{' '}
-        <b>alohida kuryer</b> boradi va uning yetkazish haqi alohida hisoblanadi.
-      </p>
+      <GroupTiersEditor
+        value={form.delivery_group_tiers}
+        onChange={(v) => update('delivery_group_tiers', v)}
+        flatFee={deliveryValue(form, 'delivery_extra_stop_fee')}
+        flatKm={deliveryValue(form, 'delivery_group_max_km')}
+        flatFields={
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+            {numField('delivery_extra_stop_fee', "Har qo‘shimcha oshxona uchun (so'm)")}
+            {numField('delivery_group_max_km', 'Bitta kuryer uchun oshxonalar orasidagi eng ko‘p masofa (km)', true)}
+          </div>
+        }
+      />
       <div className="rounded-xl border border-line bg-neutral-50/60 p-3 text-xs text-neutral-600 space-y-1">
         <p className="font-semibold text-neutral-700">Hisob namunasi:</p>
         {examples.map((km) => (

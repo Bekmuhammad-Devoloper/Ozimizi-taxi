@@ -107,6 +107,28 @@ const ROAD = 1.3; // straight line → road distance
 const DEFAULT_GROUP_MAX_KM = 3;
 const GROUP_LIVE: FoodOrderStatus[] = ['NEW', 'COOKING', 'READY', 'PICKED_UP', 'DELIVERED'];
 
+/** One step of the extra fee for a kitchen added to a courier's run. */
+export interface GroupTier {
+  uptoKm: number;
+  fee: number;
+}
+
+/** Admin's steps from settings (JSON), cleaned and sorted; bad rows are dropped. */
+export function parseGroupTiers(raw: string | null | undefined): GroupTier[] {
+  let rows: unknown;
+  try {
+    rows = JSON.parse(String(raw ?? '').trim() || '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((r: any) => ({ uptoKm: Number(r?.uptoKm), fee: Math.round(Number(r?.fee)) }))
+    .filter((t) => Number.isFinite(t.uptoKm) && t.uptoKm > 0 && t.uptoKm <= 100 && Number.isFinite(t.fee) && t.fee >= 0)
+    .sort((a, b) => a.uptoKm - b.uptoKm)
+    .slice(0, 10);
+}
+
 const money = (n: number) => Math.round(n * 100) / 100;
 
 interface DispatchState {
@@ -372,7 +394,21 @@ export class FoodService implements OnModuleInit {
       perKm: await n('delivery_per_km', 2000),
       commissionPct: Math.min(100, await n('delivery_commission_percent', 10)),
       extraStop: await n('delivery_extra_stop_fee', 3000),
-      groupMaxKm: await n('delivery_group_max_km', DEFAULT_GROUP_MAX_KM),
+      ...(await this.groupRules(n)),
+    };
+  }
+
+  /**
+   * Admin's steps for kitchens of one order, by the distance between them:
+   * e.g. up to 0.5 km +3 000, up to 1 km +5 000. The last step is also the
+   * farthest one courier goes; a kitchen beyond it gets its own courier.
+   * Without steps: one flat extra-stop fee up to `delivery_group_max_km`.
+   */
+  private async groupRules(n: (k: 'delivery_group_max_km', d: number) => Promise<number>) {
+    const tiers = parseGroupTiers(await this.settings.get('delivery_group_tiers'));
+    return {
+      groupTiers: tiers,
+      groupMaxKm: tiers.length ? tiers[tiers.length - 1].uptoKm : await n('delivery_group_max_km', DEFAULT_GROUP_MAX_KM),
     };
   }
 
@@ -426,12 +462,32 @@ export class FoodService implements OnModuleInit {
     return run.filter((x) => GROUP_LIVE.includes(x.status));
   }
 
-  /** One courier collecting these kitchens: the farthest one's price + the extra-stop fee for each other. */
-  private async runQuote(ks: Kitchen[], toLat: number, toLng: number, extraStop: number) {
+  /**
+   * What each kitchen after the first adds to one courier's run: the admin's
+   * step for its distance to the nearest kitchen before it (the courier's way
+   * from one to the next), or the flat extra-stop fee when there are no steps.
+   */
+  static extraStops(ks: Pick<Kitchen, 'lat' | 'lng'>[], tiers: GroupTier[], flat: number): number[] {
+    return ks.slice(1).map((k, i) => {
+      if (!tiers.length) return flat;
+      const d = Math.min(...ks.slice(0, i + 1).map((x) => FoodService.kitchenKm(x, k)));
+      return (tiers.find((t) => d <= t.uptoKm) ?? tiers[tiers.length - 1]).fee;
+    });
+  }
+
+  /** One courier collecting these kitchens: the farthest one's price + what each other kitchen adds. */
+  private async runQuote(
+    ks: Kitchen[],
+    toLat: number,
+    toLng: number,
+    s: { extraStop: number; groupTiers: GroupTier[] },
+  ) {
     const qs = await Promise.all(ks.map((k) => this.quoteFor(k, toLat, toLng)));
+    const extras = FoodService.extraStops(ks, s.groupTiers, s.extraStop);
     return {
       km: Math.max(...qs.map((q) => q.km)),
-      fee: Math.max(...qs.map((q) => q.fee)) + extraStop * (qs.length - 1),
+      fee: Math.max(...qs.map((q) => q.fee)) + extras.reduce((a, b) => a + b, 0),
+      extras,
       mode: qs.some((q) => q.mode === 'taxi') ? ('taxi' as const) : ('courier' as const),
     };
   }
@@ -439,10 +495,10 @@ export class FoodService implements OnModuleInit {
   /** Delivery for several kitchens going to the same point: how many couriers, and each one's fee. */
   async groupQuote(ks: Kitchen[], toLat: number, toLng: number) {
     const s = await this.feeSettings();
-    const base = { extraStopFee: s.extraStop, groupMaxKm: s.groupMaxKm };
+    const base = { extraStopFee: s.extraStop, groupMaxKm: s.groupMaxKm, groupTiers: s.groupTiers };
     if (!ks.length) return { km: 0, fee: 0, mode: 'courier' as const, couriers: 0, runs: [], fees: {}, ...base };
     const runs = FoodService.splitByCourier(ks, (k) => k, s.groupMaxKm);
-    const parts = await Promise.all(runs.map((r) => this.runQuote(r, toLat, toLng, s.extraStop)));
+    const parts = await Promise.all(runs.map((r) => this.runQuote(r, toLat, toLng, s)));
     // Per kitchen, as the orders will carry it: the first of each run pays that run's fee.
     const fees: Record<string, number> = {};
     runs.forEach((r, i) => r.forEach((k, j) => (fees[k.id] = j === 0 ? parts[i].fee : 0)));
@@ -473,17 +529,17 @@ export class FoodService implements OnModuleInit {
    * already on the way).
    */
   private async repriceGroup(any: Pick<FoodOrder, 'groupId' | 'clientId' | 'deliveryType'>) {
-    const { extraStop } = await this.feeSettings();
+    const s = await this.feeSettings();
     for (const run of await this.groupRuns(any)) {
       const list = run.filter((x) => GROUP_LIVE.includes(x.status));
       if (!list.length || list.some((o) => ['PICKED_UP', 'DELIVERED'].includes(o.status))) continue;
-      await this.repriceRun(list, extraStop);
+      await this.repriceRun(list, s);
     }
   }
 
-  private async repriceRun(list: FoodOrder[], extraStop: number) {
+  private async repriceRun(list: FoodOrder[], s: { extraStop: number; groupTiers: GroupTier[] }) {
     const lead = list[0];
-    const q = await this.runQuote(list.map((o) => o.kitchen), Number(lead.lat), Number(lead.lng), extraStop);
+    const q = await this.runQuote(list.map((o) => o.kitchen), Number(lead.lat), Number(lead.lng), s);
     for (const o of list) {
       const fee = o.id === lead.id ? q.fee : 0;
       const total = Number(o.itemsTotal) + fee;

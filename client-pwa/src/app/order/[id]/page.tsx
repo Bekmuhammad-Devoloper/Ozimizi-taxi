@@ -41,6 +41,8 @@ interface WaitTariff {
 
 /** Re-read the order this often while the waiting meter matters (server corrects for driving). */
 const WAIT_POLL_MS = 30_000;
+/** How long a search runs before the client is asked to cancel or wait more. */
+const SEARCH_WAIT_MS = 3 * 60_000;
 
 export default function OrderPage() {
   const active = useOrderStore((s) => s.active);
@@ -122,13 +124,48 @@ function OrderInner() {
     };
   }, [load]);
 
-  const cancel = async () => {
+  // 3-minute countdown while searching; "Yana 3 daqiqa" pushes the end on.
+  const waitKey = `moviy-search-until-${id}`;
+  const [waitUntil, setWaitUntil] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(waitKey));
+      if (v > 0) setWaitUntil(v);
+    } catch {
+      /* private window */
+    }
+  }, [waitKey]);
+  const [waitBusy, setWaitBusy] = useState(false);
+
+  const waitMore = async () => {
+    if (!order || waitBusy) return;
+    setWaitBusy(true);
+    setErr(null);
+    try {
+      const { data } = await api.post<ClientOrder>(`/client/orders/${order.id}/wait-more`);
+      const until = Date.now() + SEARCH_WAIT_MS;
+      setWaitUntil(until);
+      try {
+        localStorage.setItem(waitKey, String(until));
+      } catch {
+        /* private window */
+      }
+      setOrder(data);
+      setActive(data);
+    } catch (e) {
+      setErr(errMsg(e, 'Xatolik, qayta urinib ko‘ring'));
+    } finally {
+      setWaitBusy(false);
+    }
+  };
+
+  const cancel = async (ask = true) => {
     if (!order) return;
     const warn =
       order.status === 'ARRIVED'
         ? 'Haydovchi allaqachon yetib kelgan. Bekor qilsangiz bonus balansingizdan jarima yechilishi mumkin. Davom etasizmi?'
         : 'Buyurtma bekor qilinsinmi?';
-    if (!confirm(warn)) return;
+    if (ask && !confirm(warn)) return;
     setBusy(true);
     setErr(null);
     try {
@@ -167,7 +204,9 @@ function OrderInner() {
   const driverLatLng = driverPos ?? (d?.lat != null && d?.lng != null ? { lat: d.lat, lng: d.lng } : null);
   const showDriver = live && order.status !== 'PENDING' && driverLatLng;
   const cashDue = Math.max(0, Number(order.price ?? 0) - Number(order.discount ?? 0) - Number(order.bonusUsed ?? 0));
-  const waitedSec = Math.max(0, Math.floor((now - new Date(order.createdAt).getTime()) / 1000));
+  const searchUntil = waitUntil ?? new Date(order.createdAt).getTime() + SEARCH_WAIT_MS;
+  const searchLeft = Math.max(0, Math.ceil((searchUntil - now) / 1000));
+  const askWait = order.status === 'PENDING' && searchLeft === 0;
 
   // ---------- live: map + sheet ----------
   if (live) {
@@ -228,10 +267,10 @@ function OrderInner() {
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold">Yaqin haydovchilarga yuborildi</p>
-                  <p className="text-xs text-neutral-400">Odatda 1 daqiqa ichida topiladi</p>
+                  <p className="text-xs text-neutral-400">Haydovchi qidirilmoqda — kuting</p>
                 </div>
-                <span className="font-mono text-sm text-gold tabular-nums">
-                  {String(Math.floor(waitedSec / 60)).padStart(2, '0')}:{String(waitedSec % 60).padStart(2, '0')}
+                <span className="font-mono text-lg font-bold text-gold tabular-nums">
+                  {Math.floor(searchLeft / 60)}:{String(searchLeft % 60).padStart(2, '0')}
                 </span>
               </div>
             )}
@@ -277,6 +316,37 @@ function OrderInner() {
             )}
           </div>
         </div>
+
+        {/* 3 minutes and no driver yet: cancel, or wait 3 more (drivers are rung again). */}
+        {askWait && (
+          <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+              <span className="w-12 h-12 rounded-2xl bg-gold/15 text-gold-deep flex items-center justify-center">
+                <Hourglass size={24} />
+              </span>
+              <p className="mt-3 text-lg font-extrabold leading-snug">Hozircha haydovchi topilmadi</p>
+              <p className="mt-1 text-sm text-neutral-600 leading-relaxed">
+                Hozirda barcha haydovchilar band bo‘lishi mumkin. Buyurtmani bekor qilasizmi yoki yana 3 daqiqa
+                kutasizmi?
+              </p>
+              {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+              <button
+                onClick={() => void waitMore()}
+                disabled={waitBusy || busy}
+                className="mt-4 w-full h-12 rounded-2xl bg-ink text-gold font-extrabold flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.98] transition"
+              >
+                {waitBusy ? <Loader2 size={18} className="animate-spin" /> : <Clock size={18} />} Yana 3 daqiqa kutaman
+              </button>
+              <button
+                onClick={() => void cancel(false)}
+                disabled={waitBusy || busy}
+                className="mt-2 w-full h-12 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-bold flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.98] transition"
+              >
+                <XCircle size={18} /> Buyurtmani bekor qilish
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

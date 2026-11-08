@@ -72,6 +72,13 @@ export function describeEvent(e: OrderEventRow): { icon: string; title: string; 
         detail: 'Buyurtma bekor qilinmadi — qayta o‘rtaga tushdi',
         tone: 'warn',
       };
+    case 'client_waits':
+      return {
+        icon: '⏳',
+        title: 'Mijoz yana 3 daqiqa kutishni tanladi',
+        detail: '3 daqiqada haydovchi topilmadi — buyurtma barcha bo‘sh haydovchilarga qayta yuborildi',
+        tone: 'warn',
+      };
     case 'no_drivers':
       return { icon: '🚫', title: 'Bo‘sh haydovchi topilmadi', detail: 'Liniyada bo‘sh haydovchi yo‘q — buyurtma kutmoqda', tone: 'bad' };
     case 'accepted':

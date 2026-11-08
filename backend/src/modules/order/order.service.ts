@@ -304,6 +304,30 @@ export class OrderService {
     }
   }
 
+  /**
+   * The client's 3-minute countdown ran out with no driver and the client chose
+   * to wait 3 more minutes: ring every free driver again right away (drivers who
+   * declined stay out).
+   */
+  async clientWaitMore(clientId: string, orderId: string): Promise<Order> {
+    const order = await this.orders.findOne({ where: { id: orderId, clientId } });
+    if (!order) throw new NotFoundException('Buyurtma topilmadi');
+    if (order.status !== OrderStatus.PENDING) return order;
+    await this.logEvent(orderId, 'client_waits', null, { minutes: 3 });
+    const st = this.dispatch.get(orderId);
+    if (!st) {
+      // The search state was lost (server restart): start it again.
+      await this.broadcastToNearbyDrivers(order);
+    } else if (st.stage === 'all') {
+      if (st.timer) clearTimeout(st.timer);
+      st.timer = null;
+      // The client keeps waiting: the re-ring limit starts over.
+      if (st.rounds >= OrderService.RERING_MAX) st.rounds = 0;
+      await this.offerNext(orderId);
+    }
+    return order;
+  }
+
   /** Driver pressed "Rad etish" on a personal offer → move on immediately. */
   async declineOffer(driverId: string, orderId: string) {
     this.noteOfferReached(driverId);
@@ -1178,6 +1202,10 @@ export class OrderService {
       order: { createdAt: 'DESC' },
     });
     return o ?? null;
+  }
+
+  findById(id: string): Promise<Order | null> {
+    return this.orders.findOne({ where: { id } });
   }
 
   async findOneForDriver(driverId: string, orderId: string) {

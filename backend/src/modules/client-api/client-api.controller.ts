@@ -236,6 +236,15 @@ export class ClientApiController {
     return orderForClient(saved, o.driver);
   }
 
+  /** Nobody took the order in 3 minutes and the client chose to wait 3 more. */
+  @Post('orders/:id/wait-more')
+  async waitMore(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    const o = await this.own(user, id);
+    const c = await this.me(user);
+    await this.orderService.clientWaitMore(c.id, id);
+    return orderForClient(await this.own(user, id), o.driver);
+  }
+
   // --- chat -----------------------------------------------------------------
 
   @Get('orders/:id/messages')

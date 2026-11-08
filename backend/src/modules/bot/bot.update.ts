@@ -150,6 +150,27 @@ function menuBtn(k: BtnKey) {
     : { text: BTN[k] }) as unknown as string;
 }
 
+/** A bot order waits this long for a driver before the client is asked what to do. */
+const SEARCH_WAIT_SEC = 180;
+/** How often the countdown on the "searching" message is refreshed. */
+const SEARCH_TICK_MS = 10_000;
+
+/** "Searching" message with the time left, e.g. 2:40. */
+function searchText(leftSec: number): string {
+  const m = Math.floor(leftSec / 60);
+  const s = String(leftSec % 60).padStart(2, '0');
+  return [
+    '🔎 <b>Haydovchi qidirilmoqda…</b>',
+    'Buyurtmangiz yaqin atrofdagi haydovchilarga yuborildi.',
+    '',
+    `⏳ Kutish: <b>${m}:${s}</b>`,
+    'Haydovchi topilishi bilan shu yerda xabar beramiz.',
+  ].join('\n');
+}
+
+const searchKb = (orderId: string) =>
+  Markup.inlineKeyboard([[Markup.button.callback('❌ Buyurtmani bekor qilish', `cancel:${orderId}`)]]);
+
 const mainMenu = () =>
   Markup.keyboard([
     [menuBtn('order')],
@@ -440,6 +461,12 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
     this.orderEvents.on(
       'order.accepted',
       ({ order, driver, etaMinutes }) => {
+        const counting = this.stopSearchCountdown(order.id);
+        if (counting) {
+          void this.bot.telegram
+            .editMessageText(counting.chatId, counting.messageId, undefined, '✅ <b>Haydovchi topildi</b>', { parse_mode: 'HTML' })
+            .catch(() => undefined);
+        }
         if (!driver) return;
         this.notifyClient(order.clientId, async (chatId) => {
           await this.sendDriverInfoMessage(chatId, order.id, driver, {
@@ -584,6 +611,12 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
     });
 
     this.orderEvents.on('order.cancelled', ({ order }) => {
+      const counting = this.stopSearchCountdown(order.id);
+      if (counting) {
+        void this.bot.telegram
+          .editMessageReplyMarkup(counting.chatId, counting.messageId, undefined, undefined)
+          .catch(() => undefined);
+      }
       this.notifyClient(order.clientId, async (chatId) => {
         const penalty = Number(order.cancelPenalty ?? 0);
         await this.bot.telegram.sendMessage(
@@ -812,18 +845,11 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
       });
       this.session.set(from.id, { step: 'registered' });
       await ctx.reply('✅ Buyurtma qabul qilindi.', mainMenu());
-      await ctx.reply(
-        '🔎 <b>Haydovchi qidirilmoqda…</b>\n' +
-          'Buyurtmangiz yaqin atrofdagi haydovchilarga yuborildi.\n' +
-          '\n' +
-          '⏳ Haydovchi topilishi bilan shu yerda xabar beramiz.',
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('❌ Buyurtmani bekor qilish', `cancel:${created.id}`)],
-          ]),
-        },
-      );
+      const msg = await ctx.reply(searchText(SEARCH_WAIT_SEC), {
+        parse_mode: 'HTML',
+        ...searchKb(created.id),
+      });
+      this.startSearchCountdown(created.id, msg.chat.id, msg.message_id);
     } catch (e) {
       this.logger.error(`order.create failed: ${(e as Error).message}`);
       await ctx.reply(
@@ -1881,10 +1907,100 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
     }
   }
 
+  // ------------------------------------------------- "searching" countdown
+  // A bot order shows 3:00 counting down on its "searching" message. At 0:00
+  // the client is asked: cancel, or wait 3 more minutes (drivers are rung again).
+  // The countdown stops as soon as a driver takes the order or it is cancelled.
+
+  private readonly searching = new Map<string, { chatId: number; messageId: number; endsAt: number; timer: NodeJS.Timeout }>();
+
+  private startSearchCountdown(orderId: string, chatId: number, messageId: number) {
+    this.stopSearchCountdown(orderId);
+    const st = {
+      chatId,
+      messageId,
+      endsAt: Date.now() + SEARCH_WAIT_SEC * 1000,
+      timer: setInterval(() => void this.searchTick(orderId).catch(() => undefined), SEARCH_TICK_MS),
+    };
+    this.searching.set(orderId, st);
+  }
+
+  private stopSearchCountdown(orderId: string) {
+    const st = this.searching.get(orderId);
+    if (!st) return null;
+    clearInterval(st.timer);
+    this.searching.delete(orderId);
+    return st;
+  }
+
+  private async searchTick(orderId: string) {
+    const st = this.searching.get(orderId);
+    if (!st) return;
+    const order = await this.orders.findById(orderId).catch(() => null);
+    if (!order || order.status !== 'PENDING') {
+      this.stopSearchCountdown(orderId);
+      return;
+    }
+    const left = Math.max(0, Math.round((st.endsAt - Date.now()) / 1000));
+    if (left > 0) {
+      await this.bot.telegram
+        .editMessageText(st.chatId, st.messageId, undefined, searchText(left), { parse_mode: 'HTML', ...searchKb(orderId) })
+        .catch(() => undefined);
+      return;
+    }
+    this.stopSearchCountdown(orderId);
+    await this.bot.telegram
+      .editMessageText(
+        st.chatId,
+        st.messageId,
+        undefined,
+        '⌛ <b>Hozircha haydovchi topilmadi</b>\n' +
+          'Hozirda barcha haydovchilar band bo‘lishi mumkin.\n\n' +
+          'Buyurtmani bekor qilasizmi yoki yana 3 daqiqa kutasizmi?',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('⏳ Yana 3 daqiqa kutaman', `waitmore:${orderId}`)],
+            [Markup.button.callback('❌ Buyurtmani bekor qilish', `cancel:${orderId}`)],
+          ]),
+        },
+      )
+      .catch(() => undefined);
+  }
+
+  @Action(/waitmore:(.+)/)
+  async onWaitMore(@Ctx() ctx: Context) {
+    const orderId = ((ctx as any).match as RegExpExecArray)[1];
+    const client = await this.clients.findByTelegramId(ctx.from!.id);
+    if (!client) {
+      await ctx.answerCbQuery('Avval /start bosing', { show_alert: true });
+      return;
+    }
+    try {
+      const order = await this.orders.clientWaitMore(client.id, orderId);
+      if (order.status !== 'PENDING') {
+        await ctx.answerCbQuery('Buyurtma endi qidiruvda emas');
+        await ctx.editMessageReplyMarkup(undefined).catch(() => undefined);
+        return;
+      }
+      await ctx.answerCbQuery('Yana 3 daqiqa kutamiz — haydovchilarga qayta yuborildi');
+      const msg = (ctx.callbackQuery as any)?.message;
+      if (msg) {
+        await ctx
+          .editMessageText(searchText(SEARCH_WAIT_SEC), { parse_mode: 'HTML', ...searchKb(orderId) })
+          .catch(() => undefined);
+        this.startSearchCountdown(orderId, msg.chat.id, msg.message_id);
+      }
+    } catch (e) {
+      await ctx.answerCbQuery((e as Error).message, { show_alert: true });
+    }
+  }
+
   @Action(/cancel:(.+)/)
   async onCancel(@Ctx() ctx: Context) {
     const match = (ctx as any).match as RegExpExecArray;
     const orderId = match[1];
+    this.stopSearchCountdown(orderId);
     try {
       await this.orders.cancel(orderId, 'client');
       await ctx.answerCbQuery('Bekor qilindi');
