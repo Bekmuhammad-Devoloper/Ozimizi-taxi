@@ -150,6 +150,17 @@ function menuBtn(k: BtnKey) {
     : { text: BTN[k] }) as unknown as string;
 }
 
+/** True when app version `v` is older than `latest`; no / unknown version counts as older. */
+function versionOlder(v: string | null | undefined, latest: string): boolean {
+  if (!v || !/^\d+(\.\d+)*$/.test(v)) return true;
+  const a = v.split('.').map(Number);
+  const b = latest.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  }
+  return false;
+}
+
 /** A bot order waits this long for a driver before the client is asked what to do. */
 const SEARCH_WAIT_SEC = 180;
 /** How often the countdown on the "searching" message is refreshed. */
@@ -283,6 +294,8 @@ export class BotUpdate implements OnModuleInit {
 
   onModuleInit() {
     this.startPollingWatchdog();
+    // After a deploy: new APK versions go out to the people who use the apps.
+    setTimeout(() => void this.announceReleases().catch((e) => this.logger.warn(`release notice: ${(e as Error).message}`)), 90_000);
     void this.loadButtonIcons();
     void this.loadBotLangs().catch((e) => this.logger.warn(`bot languages: ${(e as Error).message}`));
     void this.bot.telegram
@@ -1770,6 +1783,89 @@ ${escapeHtml(courier.fullName)} · ${escapeHtml(courier.phone)}`;
   private foodUrl(path: string): string {
     const base = (this.config.get<string>('DRIVER_APP_URL') ?? 'https://moviytaxi.uz').replace(/\/$/, '');
     return `${base}/client${path}`;
+  }
+
+  // ------------------------------------------------- new app versions
+  // Each new APK version is sent once, by itself, after it is published:
+  //  - drivers whose app is older (or who have none yet): a note in the app
+  //    and, on Telegram, the new APK file;
+  //  - clients who use the Android app (it reports its version): the new APK.
+  // The last version sent is kept in site_settings (apk_announced_<kind>), set
+  // before sending so a restart in the middle never sends it twice.
+
+  private async announceReleases() {
+    for (const kind of ['driver', 'client'] as const) {
+      const version = this.publishedVersion(kind);
+      if (!version) continue;
+      const key = `apk_announced_${kind}`;
+      const [row] = (await this.ds.query(`SELECT value FROM site_settings WHERE key = $1`, [key])) as { value: string }[];
+      if (row?.value === version) continue;
+      await this.ds.query(
+        `INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, version],
+      );
+      const sent = kind === 'driver' ? await this.announceDriverRelease(version) : await this.announceClientRelease(version);
+      this.logger.log(`new ${kind} app ${version}: sent to ${sent.telegram} on Telegram, ${sent.app} in the app`);
+    }
+  }
+
+  private publishedVersion(kind: 'driver' | 'client'): string | null {
+    const dir = this.config.get<string>('APK_DIR') ?? '/opt/moviytaxi/apk';
+    try {
+      const v = String(JSON.parse(fs.readFileSync(join(dir, kind === 'client' ? 'version-client.json' : 'version.json'), 'utf8')).version ?? '');
+      return /^\d+(\.\d+)*$/.test(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async announceDriverRelease(version: string) {
+    const base = (this.config.get<string>('DRIVER_APP_URL') ?? 'https://moviytaxi.uz').replace(/\/$/, '');
+    const drivers = (await this.ds.query(
+      `SELECT id, app_version AS v FROM drivers WHERE deleted_at IS NULL AND is_active`,
+    )) as { id: string; v: string | null }[];
+    const title = '📲 Ilovani yangilang';
+    const text = `Haydovchi ilovasining yangi versiyasi ${version} chiqdi — buyurtmalar va signal to‘g‘ri ishlashi uchun yangilang.`;
+    let app = 0;
+    let telegram = 0;
+    for (const d of drivers.filter((x) => versionOlder(x.v, version))) {
+      this.realtime.emitToDriver(d.id, 'announcement', { title, text, url: `${base}/app`, kind: 'update' });
+      app++;
+      const tg = (await this.applications.latestForDriver(d.id).catch(() => null))?.telegramId;
+      if (!tg) continue;
+      try {
+        await this.bot.telegram.sendMessage(Number(tg), `<b>${escapeHtml(title)}</b>\n${escapeHtml(text)}`, { parse_mode: 'HTML' });
+        await this.sendAppDownload(Number(tg), 'driver');
+        telegram++;
+      } catch {
+        /* blocked the bot */
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    return { app, telegram };
+  }
+
+  private async announceClientRelease(version: string) {
+    const clients = (await this.ds.query(
+      `SELECT telegram_id AS tg, app_version AS v FROM clients
+        WHERE app_version IS NOT NULL AND telegram_id IS NOT NULL AND NOT is_blocked`,
+    )) as { tg: string; v: string }[];
+    let telegram = 0;
+    for (const c of clients.filter((x) => versionOlder(x.v, version))) {
+      try {
+        await this.bot.telegram.sendMessage(
+          Number(c.tg),
+          `📲 <b>Moviy Taxi ilovasining yangi versiyasi ${escapeHtml(version)}</b>\nYangilab oling — quyidagi faylni oching va o‘rnating.`,
+          { parse_mode: 'HTML' },
+        );
+        await this.sendAppDownload(Number(c.tg), 'client');
+        telegram++;
+      } catch {
+        /* blocked the bot */
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    return { app: 0, telegram };
   }
 
   /** Telegram file_id of the last uploaded build per app, keyed by build. */

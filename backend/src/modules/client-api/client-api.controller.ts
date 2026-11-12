@@ -125,6 +125,16 @@ export class ClientApiController {
     return o;
   }
 
+  /** The Android app reports its version: a new APK is then sent only to app users. */
+  @Post('app-version')
+  async appVersion(@CurrentUser() user: JwtPayload, @Body() body: { version?: string }) {
+    const c = await this.me(user);
+    const v = String(body?.version ?? '').trim().slice(0, 32);
+    if (!/^\d+(\.\d+)*$/.test(v)) return { ok: false };
+    await this.clients.query(`UPDATE clients SET app_version = $2, app_seen_at = now() WHERE id = $1`, [c.id, v]);
+    return { ok: true };
+  }
+
   @Get('me')
   async getMe(@CurrentUser() user: JwtPayload) {
     return this.auth.publicClient(await this.me(user));

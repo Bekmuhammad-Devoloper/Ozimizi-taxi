@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { isNativeApp } from '@/lib/native';
+import { api } from '@/lib/api';
 
 const DISMISS_KEY = 'moviy-client-update-dismissed';
 const DISMISS_MS = 24 * 3600_000;
@@ -9,6 +10,7 @@ const CLIENT_APK = '/downloads/moviytaxi-client.apk';
 
 // Read the latest version once per app start (Shell remounts on every page).
 let latestCache: string | null = null;
+let versionReported = false;
 
 /** Installed APK version: 1.0.2+ append "MoviyClient/x.y.z" to the user agent. */
 function installedVersion(): string {
@@ -32,6 +34,15 @@ function older(a: string, b: string): boolean {
  */
 export function AppUpdate() {
   const [offer, setOffer] = useState<{ installed: string; latest: string } | null>(null);
+
+  // Tell the server which version this phone has: the bot sends new versions to app users.
+  useEffect(() => {
+    if (!isNativeApp() || versionReported) return;
+    versionReported = true;
+    void api.post('/client/app-version', { version: installedVersion() }).catch(() => {
+      versionReported = false;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isNativeApp()) return;
